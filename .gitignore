@@ -1,0 +1,21 @@
+# Java / Maven (Backend - Luisa y Neyer)
+target/
+*.jar
+*.war
+.mvn/
+
+# Node / Vue / Vercel (Frontend - Jhon)
+node_modules/
+dist/
+.vercel/
+
+# Variables de entorno y credenciales (Neon URL, JWT Secret, API URL)
+.env
+.env.local
+.env.*.local
+
+# IDEs y sistema
+.idea/
+.vscode/
+*.iml
+.DS_Store
