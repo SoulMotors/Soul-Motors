@@ -57,7 +57,7 @@ const toggleTheme = () => emit('toggle-theme')
 
 const handleLogin = () => {
   const mail = email.value.trim().toLowerCase()
-  emit('login', email.value.trim()) // App.vue guarda el correo (lo usa el Mecánico)
+  emit('login', email.value.trim())
 
   if (mail.includes('admin')) {
     router.push('/admin')
@@ -89,6 +89,24 @@ const handleLogin = () => {
   transition: background-color 0.3s ease;
 }
 
+.login-container.dark-theme {
+  background-color: #1E1F22;
+  --bg-card: #2B2D30;
+  --border-color: #3C3F41;
+  --text-primary: #F2F2F2;
+  --text-secondary: #9DA5B4;
+  --input-bg: #232428;
+}
+
+.login-container.light-theme {
+  background-color: #F4F6F8;
+  --bg-card: #FFFFFF;
+  --border-color: #D1D5DB;
+  --text-primary: #1F2937;
+  --text-secondary: #6B7280;
+  --input-bg: #F9FAFB;
+}
+
 .login-card {
   background-color: var(--bg-card, #2B2D30);
   border: 1px solid var(--border-color, #3C3F41);
@@ -99,7 +117,8 @@ const handleLogin = () => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+  transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
 .login-logo {
@@ -124,6 +143,7 @@ const handleLogin = () => {
 .form-group label {
   font-size: 13px;
   color: var(--text-secondary, #9DA5B4);
+  font-weight: 500;
 }
 
 .form-group input {
@@ -134,7 +154,12 @@ const handleLogin = () => {
   border-radius: 12px;
   font-size: 14px;
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, background-color 0.3s ease, color 0.3s ease;
+}
+
+.form-group input::placeholder {
+  color: var(--text-secondary, #9DA5B4);
+  opacity: 0.7;
 }
 
 .form-group input:focus {

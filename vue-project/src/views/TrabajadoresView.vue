@@ -10,13 +10,11 @@
     @logout="$emit('change-view', 'login')"
   >
     <section class="card display-section">
+      <!-- Encabezado y Barra de Herramientas alineados correctamente -->
       <div class="card-header-flex">
-        <div class="header-left">
-          <WorkersMetrics :workers="workersData" @open-worker="openConsultModal" />
-          <div class="header-titles-group">
-            <h3>Nómina y Equipo Activo</h3>
-            <p>Listado de colaboradores registrados con opciones de consulta y modificación</p>
-          </div>
+        <div class="header-titles-group">
+          <h3>Nómina y Equipo Activo</h3>
+          <p>Listado de colaboradores registrados con opciones de consulta y modificación</p>
         </div>
 
         <div class="controls-right-group">
@@ -25,6 +23,11 @@
             <input v-model="searchQuery" type="text" placeholder="Buscar trabajador..." class="search-input" />
           </div>
         </div>
+      </div>
+
+      <!-- Métricas secundarias opcionales si ya creaste el componente -->
+      <div class="workers-metrics-wrap" v-if="hasWorkersMetrics">
+        <WorkersMetrics :workers="workersData" @open-worker="openConsultModal" />
       </div>
 
       <p v-if="!filteredWorkers.length" class="empty-state">No hay trabajadores que coincidan con la búsqueda.</p>
@@ -99,6 +102,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { LayoutDashboard, Package, Users, Search, Settings, Eye, Edit3, X } from 'lucide-vue-next'
 import AppShell from '../components/AppShell.vue'
+// Nota: Si no usas WorkersMetrics como componente separado, puedes omitirlo o asegurarte de tenerlo.
 import WorkersMetrics from '../components/WorkersMetrics.vue'
 
 defineProps({ isDarkMode: Boolean })
@@ -116,6 +120,9 @@ const showConsultModal = ref(false)
 const showEditModal = ref(false)
 const selectedWorker = ref(null)
 const editForm = ref(null)
+
+// Control de existencia del componente de métricas para evitar errores si no está creado
+const hasWorkersMetrics = ref(false) 
 
 const closeMenus = () => { activeMenuId.value = null }
 onMounted(() => document.addEventListener('click', closeMenus))
@@ -151,14 +158,13 @@ const saveChanges = () => {
 .card { background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: 16px; padding: 24px; }
 .text-success { color: #2ECC71; }
 .display-section { display: flex; flex-direction: column; gap: 20px; }
-.card-header-flex { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
-.header-left { display: flex; align-items: center; gap: 14px; }
-.header-titles-group h3 { font-size: 17px; font-weight: 600; margin: 0 0 4px 0; }
-.header-titles-group p { font-size: 12px; color: var(--text-secondary); margin: 0; }
+.card-header-flex { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
+.header-titles-group h3 { font-size: 18px; font-weight: 600; margin: 0 0 4px 0; }
+.header-titles-group p { font-size: 13px; color: var(--text-secondary); margin: 0; }
 .controls-right-group { display: flex; align-items: center; gap: 12px; }
 .search-box-wrapper { position: relative; display: flex; align-items: center; }
 .search-icon-input { position: absolute; left: 12px; color: var(--text-secondary); }
-.search-input { background-color: var(--input-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 8px 14px 8px 36px; color: var(--text-primary); font-size: 12px; outline: none; width: 200px; height: 38px; box-sizing: border-box; }
+.search-input { background-color: var(--input-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 8px 14px 8px 36px; color: var(--text-primary); font-size: 13px; outline: none; width: 240px; height: 40px; box-sizing: border-box; }
 .search-input:focus { border-color: #E67E22; }
 .empty-state { font-size: 13px; color: var(--text-secondary); margin: 0; }
 
@@ -172,7 +178,7 @@ const saveChanges = () => {
 .gear-btn { background: transparent; border: none; color: var(--text-secondary); cursor: pointer; padding: 4px; border-radius: 6px; display: flex; align-items: center; justify-content: center; }
 .gear-btn:hover { color: #E67E22; background: rgba(230, 126, 34, 0.1); }
 .dropdown-wrapper { position: relative; }
-.dropdown-menu { position: absolute; right: 0; top: 28px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 10; width: 180px; display: flex; flex-direction: column; padding: 4px; }
+.dropdown-menu { position: absolute; right: 0; top: 28px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 10; width: 190px; display: flex; flex-direction: column; padding: 4px; }
 .dropdown-item { background: transparent; border: none; color: var(--text-primary); padding: 8px 12px; font-size: 12px; display: flex; align-items: center; gap: 8px; cursor: pointer; text-align: left; border-radius: 6px; }
 .dropdown-item:hover { background: rgba(230, 126, 34, 0.15); color: #E67E22; }
 .worker-card-body { border-top: 1px solid var(--border-color); padding-top: 10px; display: flex; flex-direction: column; gap: 6px; }
