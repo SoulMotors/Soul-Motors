@@ -9,6 +9,5 @@ public enum Rol {
     ADMINISTRADOR,
     GERENTE,
     MECANICO,
-    VENDEDOR,
-    EMPLEADO
+    VENDEDOR
 }
