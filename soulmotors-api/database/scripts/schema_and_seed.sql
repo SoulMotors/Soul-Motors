@@ -127,8 +127,8 @@ CREATE TRIGGER trg_mov_inv_actualizado_at BEFORE UPDATE ON movimiento_inventario
 
 -- Hash BCrypt de prueba para entorno dev (contraseña: "SoulMotors2026*")
 INSERT INTO usuario (nombre, rol, username, password) VALUES
-('Admin General', 'ADMINISTRADOR', 'admin', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy'),
-('Mecánico Juan', 'MECANICO', 'empleado1', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy')
+('Admin General', 'ADMINISTRADOR', 'admin', '$2a$10$3aPn0nxkbPeaqrpa2Nqcyuox34MrI7sobtj4H.l6Bqopi5KD7GyJe'),
+('Mecánico Juan', 'MECANICO', 'empleado1', '$2a$10$3aPn0nxkbPeaqrpa2Nqcyuox34MrI7sobtj4H.l6Bqopi5KD7GyJe')
 ON CONFLICT (username) DO NOTHING;
 
 INSERT INTO cliente (documento, nombre, telefono) VALUES
