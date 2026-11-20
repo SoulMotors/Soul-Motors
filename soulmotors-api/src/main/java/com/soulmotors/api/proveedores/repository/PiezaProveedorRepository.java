@@ -1,4 +1,4 @@
-package com.soulmotors.proveedores.repository;
+package com.soulmotors.api.proveedores.repository;
 
 import java.util.List;
 import java.util.Optional;
@@ -6,7 +6,7 @@ import java.util.Optional;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import com.soulmotors.proveedores.model.PiezaProveedor;
+import com.soulmotors.api.proveedores.model.PiezaProveedor;
 
 public interface PiezaProveedorRepository extends JpaRepository<PiezaProveedor, Long> {
 

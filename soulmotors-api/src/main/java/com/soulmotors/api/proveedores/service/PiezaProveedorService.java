@@ -1,4 +1,4 @@
-package com.soulmotors.proveedores.service;
+package com.soulmotors.api.proveedores.service;
 
 import java.util.List;
 
@@ -10,13 +10,13 @@ import com.soulmotors.common.exception.ConflictException;
 import com.soulmotors.common.exception.NotFoundException;
 import com.soulmotors.inventario.model.Pieza;
 import com.soulmotors.inventario.repository.PiezaRepository;
-import com.soulmotors.proveedores.dto.VinculoRequest;
-import com.soulmotors.proveedores.dto.VinculoResponse;
-import com.soulmotors.proveedores.dto.VinculoUpdateRequest;
-import com.soulmotors.proveedores.model.PiezaProveedor;
-import com.soulmotors.proveedores.model.Proveedor;
-import com.soulmotors.proveedores.repository.PiezaProveedorRepository;
-import com.soulmotors.proveedores.repository.ProveedorRepository;
+import com.soulmotors.api.proveedores.dto.VinculoRequest;
+import com.soulmotors.api.proveedores.dto.VinculoResponse;
+import com.soulmotors.api.proveedores.dto.VinculoUpdateRequest;
+import com.soulmotors.api.proveedores.model.PiezaProveedor;
+import com.soulmotors.api.proveedores.model.Proveedor;
+import com.soulmotors.api.proveedores.repository.PiezaProveedorRepository;
+import com.soulmotors.api.proveedores.repository.ProveedorRepository;
 
 import lombok.RequiredArgsConstructor;
 

@@ -1,4 +1,4 @@
-package com.soulmotors.proveedores.repository;
+package com.soulmotors.api.proveedores.repository;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -6,7 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import com.soulmotors.proveedores.model.Proveedor;
+import com.soulmotors.api.proveedores.model.Proveedor;
 
 public interface ProveedorRepository extends JpaRepository<Proveedor, Long> {
 

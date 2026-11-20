@@ -1,4 +1,4 @@
-package com.soulmotors.proveedores.service;
+package com.soulmotors.api.proveedores.service;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -7,10 +7,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.soulmotors.common.exception.ConflictException;
 import com.soulmotors.common.exception.NotFoundException;
-import com.soulmotors.proveedores.dto.ProveedorRequest;
-import com.soulmotors.proveedores.dto.ProveedorResponse;
-import com.soulmotors.proveedores.model.Proveedor;
-import com.soulmotors.proveedores.repository.ProveedorRepository;
+import com.soulmotors.api.proveedores.dto.ProveedorRequest;
+import com.soulmotors.api.proveedores.dto.ProveedorResponse;
+import com.soulmotors.api.proveedores.model.Proveedor;
+import com.soulmotors.api.proveedores.repository.ProveedorRepository;
 
 import lombok.RequiredArgsConstructor;
 

@@ -1,4 +1,4 @@
-package com.soulmotors.proveedores.controller;
+package com.soulmotors.api.proveedores.controller;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -7,9 +7,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import com.soulmotors.proveedores.dto.ProveedorRequest;
-import com.soulmotors.proveedores.dto.ProveedorResponse;
-import com.soulmotors.proveedores.service.ProveedorService;
+import com.soulmotors.api.proveedores.dto.ProveedorRequest;
+import com.soulmotors.api.proveedores.dto.ProveedorResponse;
+import com.soulmotors.api.proveedores.service.ProveedorService;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;

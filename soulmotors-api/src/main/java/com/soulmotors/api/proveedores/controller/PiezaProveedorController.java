@@ -1,4 +1,4 @@
-package com.soulmotors.proveedores.controller;
+package com.soulmotors.api.proveedores.controller;
 
 import java.util.List;
 
@@ -6,10 +6,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import com.soulmotors.proveedores.dto.VinculoRequest;
-import com.soulmotors.proveedores.dto.VinculoResponse;
-import com.soulmotors.proveedores.dto.VinculoUpdateRequest;
-import com.soulmotors.proveedores.service.PiezaProveedorService;
+import com.soulmotors.api.proveedores.dto.VinculoRequest;
+import com.soulmotors.api.proveedores.dto.VinculoResponse;
+import com.soulmotors.api.proveedores.dto.VinculoUpdateRequest;
+import com.soulmotors.api.proveedores.service.PiezaProveedorService;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;

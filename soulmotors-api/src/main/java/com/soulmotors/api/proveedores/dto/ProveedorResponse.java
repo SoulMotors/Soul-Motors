@@ -1,4 +1,4 @@
-package com.soulmotors.proveedores.dto;
+package com.soulmotors.api.proveedores.dto;
 
 public record ProveedorResponse(
         Long id,

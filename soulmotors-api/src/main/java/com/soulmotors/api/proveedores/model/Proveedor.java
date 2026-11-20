@@ -1,4 +1,4 @@
-package com.soulmotors.proveedores.model;
+package com.soulmotors.api.proveedores.model;
 
 import java.time.LocalDateTime;
 
