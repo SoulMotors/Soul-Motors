@@ -1,0 +1,7 @@
+cat << 'EOF' > .gitignore
+soulmotors-api/target/
+target/
+node_modules/
+.idea/
+.vscode/
+.env
