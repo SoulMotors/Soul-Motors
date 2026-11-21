@@ -1,4 +1,4 @@
-package com.soulmotors.inventario.service;
+package com.soulmotors.api.inventario.service;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -12,16 +12,16 @@ import org.springframework.transaction.annotation.Transactional;
 import com.soulmotors.common.exception.BusinessException;
 import com.soulmotors.common.exception.ConflictException;
 import com.soulmotors.common.exception.NotFoundException;
-import com.soulmotors.inventario.dto.EntradaStockRequest;
-import com.soulmotors.inventario.dto.MovimientoResponse;
-import com.soulmotors.inventario.dto.PiezaRequest;
-import com.soulmotors.inventario.dto.PiezaResponse;
-import com.soulmotors.inventario.model.MovInventario;
-import com.soulmotors.inventario.model.Pieza;
-import com.soulmotors.inventario.model.TipoMovimiento;
-import com.soulmotors.inventario.model.TipoPieza;
-import com.soulmotors.inventario.repository.MovInventarioRepository;
-import com.soulmotors.inventario.repository.PiezaRepository;
+import com.soulmotors.api.inventario.dto.EntradaStockRequest;
+import com.soulmotors.api.inventario.dto.MovimientoResponse;
+import com.soulmotors.api.inventario.dto.PiezaRequest;
+import com.soulmotors.api.inventario.dto.PiezaResponse;
+import com.soulmotors.api.inventario.model.MovInventario;
+import com.soulmotors.api.inventario.model.Pieza;
+import com.soulmotors.api.inventario.model.TipoMovimiento;
+import com.soulmotors.api.inventario.model.TipoPieza;
+import com.soulmotors.api.inventario.repository.MovInventarioRepository;
+import com.soulmotors.api.inventario.repository.PiezaRepository;
 
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;

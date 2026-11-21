@@ -1,40 +1,31 @@
-package com.soulmotors.inventario.model;
+package com.soulmotors.api.inventario.model;
 
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "pieza")
+@Table(name = "movimiento_inventario")
 @Getter
 @Setter
-public class Pieza {
+public class MovInventario {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true, length = 50)
-    private String sku;
-
-    @Column(nullable = false, length = 100)
-    private String nombre;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "pieza.id", nullable = false)
+    private Pieza pieza;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 50)
-    private TipoPieza categoria;
+    @Column(name = "tipo_movimiento", nullable = false, length = 20)
+    private TipoMovimiento tipoMovimiento;
 
-    @Column(name = "precio_venta", nullable = false, precision = 10, scale = 2)
-    private BigDecimal precioVenta;
-
-    @Column(name = "stock_actual", nullable = false)
-    private Integer stockActual;
-
-    @Column(name = "stock_minimo", nullable = false)
-    private Integer stockMinimo;
+    @Column(nullable = false)
+    private Integer cantidad;
 
     @Column(name = "creado_at", updatable = false)
     private LocalDateTime creadoAt;

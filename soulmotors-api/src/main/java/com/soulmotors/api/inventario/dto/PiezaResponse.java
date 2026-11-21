@@ -1,6 +1,6 @@
-package com.soulmotors.inventario.dto;
+package com.soulmotors.api.inventario.dto;
 
-import com.soulmotors.inventario.model.TipoPieza;
+import com.soulmotors.api.inventario.model.TipoPieza;
 import java.math.BigDecimal;
 
 public record PiezaResponse(
