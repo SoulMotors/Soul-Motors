@@ -3,7 +3,7 @@ package com.soulmotors.api.proveedores.model;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-import com.soulmotors.inventario.model.Pieza;
+import com.soulmotors.api.inventario.model.Pieza;
 
 import jakarta.persistence.*;
 import lombok.Getter;

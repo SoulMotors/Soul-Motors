@@ -1,6 +1,6 @@
-package com.soulmotors.inventario.repository;
+package com.soulmotors.api.inventario.repository;
 
-import com.soulmotors.inventario.model.Pieza;
+import com.soulmotors.api.inventario.model.Pieza;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;

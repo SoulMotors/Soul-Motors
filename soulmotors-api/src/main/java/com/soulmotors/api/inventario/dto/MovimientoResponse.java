@@ -1,6 +1,6 @@
-package com.soulmotors.inventario.dto;
+package com.soulmotors.api.inventario.dto;
 
-import com.soulmotors.inventario.model.TipoMovimiento;
+import com.soulmotors.api.inventario.model.TipoMovimiento;
 import java.time.LocalDateTime;
 
 public record MovimientoResponse(

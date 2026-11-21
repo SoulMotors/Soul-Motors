@@ -1,4 +1,4 @@
-package com.soulmotors.inventario.model;
+package com.soulmotors.api.inventario.model;
 
 public enum TipoMovimiento {
     Entrada,

@@ -1,4 +1,4 @@
-package com.soulmotors.inventario.dto;
+package com.soulmotors.api.inventario.dto;
 
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;

@@ -1,4 +1,4 @@
-package com.soulmotors.inventario.controller;
+package com.soulmotors.api.inventario.controller;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -7,12 +7,12 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import com.soulmotors.inventario.dto.EntradaStockRequest;
-import com.soulmotors.inventario.dto.MovimientoResponse;
-import com.soulmotors.inventario.dto.PiezaRequest;
-import com.soulmotors.inventario.dto.PiezaResponse;
-import com.soulmotors.inventario.model.TipoPieza;
-import com.soulmotors.inventario.service.PiezaService;
+import com.soulmotors.api.inventario.dto.EntradaStockRequest;
+import com.soulmotors.api.inventario.dto.MovimientoResponse;
+import com.soulmotors.api.inventario.dto.PiezaRequest;
+import com.soulmotors.api.inventario.dto.PiezaResponse;
+import com.soulmotors.api.inventario.model.TipoPieza;
+import com.soulmotors.api.inventario.service.PiezaService;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
