@@ -17,7 +17,7 @@ public class MovInventario {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "pieza.id", nullable = false)
+    @JoinColumn(name = "pieza_id", nullable = false)
     private Pieza pieza;
 
     @Enumerated(EnumType.STRING)
