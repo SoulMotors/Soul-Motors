@@ -121,6 +121,127 @@ CREATE TABLE movimiento_inventario (
 );
 CREATE TRIGGER trg_mov_inv_actualizado_at BEFORE UPDATE ON movimiento_inventario FOR EACH ROW EXECUTE FUNCTION actualizar_timestamp();
 
+
+-- ==========================================
+-- TAREA S2-T01: ÓRDENES DE TRABAJO, DETALLE Y GARANTÍAS
+-- Entorno: Neon (PostgreSQL 17 Cloud)
+-- Rama: feature/db-sprint2-ordenes
+-- ==========================================
+
+-- 1. Tabla Cabecera: orden_trabajo
+CREATE TABLE orden_trabajo (
+    id BIGSERIAL PRIMARY KEY,
+    vehiculo_id BIGINT NOT NULL,
+    mecanico_asignado_id BIGINT NOT NULL,
+    vendedor_id BIGINT,
+    orden_padre_garantia_id BIGINT,
+    estado VARCHAR(20) NOT NULL DEFAULT 'DIAGNOSTICO'
+        CHECK (estado IN ('DIAGNOSTICO', 'PENDIENTE', 'EN_PROCESO', 'FINALIZADA', 'ENTREGADA', 'CANCELADA')),
+    descripcion_ingreso TEXT NOT NULL,
+    viabilidad_tecnica BOOLEAN NOT NULL DEFAULT TRUE,
+    costo_mano_obra NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (costo_mano_obra >= 0),
+    total_orden NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (total_orden >= 0),
+    motivo_cancelacion TEXT,
+    creado_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    actualizado_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    -- Llaves foráneas y reglas de integridad referencial
+    CONSTRAINT fk_ot_vehiculo 
+        FOREIGN KEY (vehiculo_id) REFERENCES vehiculo(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_ot_mecanico 
+        FOREIGN KEY (mecanico_asignado_id) REFERENCES usuario(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_ot_vendedor 
+        FOREIGN KEY (vendedor_id) REFERENCES usuario(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_ot_padre_garantia 
+        FOREIGN KEY (orden_padre_garantia_id) REFERENCES orden_trabajo(id) ON DELETE RESTRICT,
+
+    -- Si pasa a CANCELADA, exige motivo obligatorio (RF-ORD-03)
+    CONSTRAINT chk_ot_motivo_cancelacion 
+        CHECK (estado <> 'CANCELADA' OR (motivo_cancelacion IS NOT NULL AND LENGTH(TRIM(motivo_cancelacion)) > 0))
+);
+
+CREATE TRIGGER trg_orden_trabajo_actualizado_at
+BEFORE UPDATE ON orden_trabajo
+FOR EACH ROW EXECUTE FUNCTION actualizar_timestamp();
+
+-- Índices de rendimiento para consultas frecuentes de Luisa (BE1) y Neyer (BE2)
+CREATE INDEX idx_ot_vehiculo ON orden_trabajo(vehiculo_id);
+CREATE INDEX idx_ot_mecanico_estado ON orden_trabajo(mecanico_asignado_id, estado);
+CREATE INDEX idx_ot_padre_garantia ON orden_trabajo(orden_padre_garantia_id) WHERE orden_padre_garantia_id IS NOT NULL;
+
+
+-- 2. Tabla Detalle: detalle_orden (Piezas solicitadas / aprobadas por OT)
+CREATE TABLE detalle_orden (
+    id BIGSERIAL PRIMARY KEY,
+    orden_id BIGINT NOT NULL,
+    pieza_id BIGINT NOT NULL,
+    cantidad INT NOT NULL CHECK (cantidad > 0),
+    precio_unitario_historico NUMERIC(12,2) CHECK (precio_unitario_historico >= 0),
+    cubierto_por_garantia BOOLEAN NOT NULL DEFAULT FALSE,
+    estado_solicitud VARCHAR(20) NOT NULL DEFAULT 'SOLICITADA'
+        CHECK (estado_solicitud IN ('SOLICITADA', 'APROBADA', 'RECHAZADA', 'REVERTIDA')),
+    aprobado_por_id BIGINT,
+    creado_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    actualizado_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    -- Llaves foráneas
+    CONSTRAINT fk_det_orden 
+        FOREIGN KEY (orden_id) REFERENCES orden_trabajo(id) ON DELETE CASCADE,
+    CONSTRAINT fk_det_pieza 
+        FOREIGN KEY (pieza_id) REFERENCES pieza(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_det_aprobado_por 
+        FOREIGN KEY (aprobado_por_id) REFERENCES usuario(id) ON DELETE RESTRICT,
+
+    -- Cuando se aprueba la pieza, debe quedar congelado el precio histórico y quién aprobó
+    CONSTRAINT chk_det_aprobacion_completa 
+        CHECK (
+            estado_solicitud <> 'APROBADA' 
+            OR (precio_unitario_historico IS NOT NULL AND aprobado_por_id IS NOT NULL)
+        )
+);
+
+CREATE TRIGGER trg_detalle_orden_actualizado_at
+BEFORE UPDATE ON detalle_orden
+FOR EACH ROW EXECUTE FUNCTION actualizar_timestamp();
+
+CREATE INDEX idx_detalle_orden_orden ON detalle_orden(orden_id);
+CREATE INDEX idx_detalle_orden_pieza ON detalle_orden(pieza_id);
+
+
+-- 3. Tabla Certificado y Checklist Técnico: garantia_orden (Relación 1:1 con orden_trabajo)
+CREATE TABLE garantia_orden (
+    id BIGSERIAL PRIMARY KEY,
+    orden_id BIGINT NOT NULL UNIQUE,
+    km_entrega INT NOT NULL CHECK (km_entrega >= 0),
+    dias_cobertura INT NOT NULL DEFAULT 30 CHECK (dias_cobertura > 0),
+    km_limite_cobertura INT NOT NULL CHECK (km_limite_cobertura >= km_entrega),
+    fecha_vencimiento DATE NOT NULL,
+    
+    -- Los 5 checks técnicos obligatorios de respaldo (E-02 / RF-ORD-04)
+    chk_torque_seguridad BOOLEAN NOT NULL DEFAULT FALSE,
+    chk_frenos_transmision BOOLEAN NOT NULL DEFAULT FALSE,
+    chk_sistema_electrico BOOLEAN NOT NULL DEFAULT FALSE,
+    chk_estanqueidad_empaques BOOLEAN NOT NULL DEFAULT FALSE,
+    chk_prueba_ruta_aprobada BOOLEAN NOT NULL DEFAULT FALSE,
+    
+    series_lotes_piezas TEXT,
+    observaciones_tecnicas TEXT,
+    estado_garantia VARCHAR(30) NOT NULL DEFAULT 'VIGENTE'
+        CHECK (estado_garantia IN ('VIGENTE', 'VENCIDA', 'RECLAMADA', 'ANULADA_POR_MANIPULACION')),
+    creado_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    actualizado_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    -- Llave foránea 1:1 hacia orden_trabajo
+    CONSTRAINT fk_garantia_orden 
+        FOREIGN KEY (orden_id) REFERENCES orden_trabajo(id) ON DELETE CASCADE
+);
+
+CREATE TRIGGER trg_garantia_orden_actualizado_at
+BEFORE UPDATE ON garantia_orden
+FOR EACH ROW EXECUTE FUNCTION actualizar_timestamp();
+
+CREATE INDEX idx_garantia_estado_vencimiento ON garantia_orden(estado_garantia, fecha_vencimiento);
+
 -- ==========================================
 -- DATOS SEMILLA (DINÁMICOS SIN IDs QUEMADOS)
 -- ==========================================
