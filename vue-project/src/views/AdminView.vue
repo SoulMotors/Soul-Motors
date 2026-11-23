@@ -5,7 +5,7 @@
     :activeKey="activeSection"
     title="Panel Administrativo - Control Total"
     subtitle="Supervisión de finanzas, inventario y gestión completa de personal"
-    @navigate="activeSection = $event"
+    @navigate="handleNavigate"
     @toggle-theme="$emit('toggle-theme')"
     @logout="$emit('change-view', 'login')"
   >
@@ -374,6 +374,7 @@
 </template>
 
 <script setup>
+import { useRouter } from 'vue-router'
 import { LayoutDashboard,  ClipboardList } from 'lucide-vue-next'
 import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import {
@@ -386,6 +387,13 @@ import InventoryPanel from '../components/InventoryPanel.vue'
 import WorkersMetrics from '../components/WorkersMetrics.vue'
 import { getProducts, formatCOP } from '../data/productos'
 
+const handleNavigate = (key) => {
+  if (key === 'ordenes') {
+    router.push('/ordenes')
+    return
+  }
+  activeSection.value = key
+}
 defineProps({ isDarkMode: Boolean })
 defineEmits(['change-view', 'toggle-theme'])
 
@@ -396,7 +404,7 @@ const navItems = [
   { key: 'trabajadores', label: 'Trabajadores', icon: Users }
 ]
 const activeSection = ref('finanzas') // Finanzas es la sección fija e inicial del Administrador
-
+const router = useRouter()
 const searchQuery = ref('')
 const activeMenuId = ref(null)
 const closeMenus = () => { activeMenuId.value = null }
