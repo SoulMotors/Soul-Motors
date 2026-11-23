@@ -1,5 +1,5 @@
+import OrdenesView from '../views/OrdenesView.vue'
 import { createRouter, createWebHistory } from 'vue-router'
-
 import LoginView from '../views/LoginView.vue'
 import AdminView from '../views/AdminView.vue'
 import GerenteView from '../views/GerenteView.vue'
@@ -9,6 +9,7 @@ import TrabajadoresView from '../views/TrabajadoresView.vue'
 import VendedorView from '../views/VendedorView.vue'
 
 const routes = [
+  { path: '/ordenes', component: OrdenesView },
   { path: '/', redirect: '/login' },
   { path: '/login', component: LoginView },
   { path: '/admin', component: AdminView },

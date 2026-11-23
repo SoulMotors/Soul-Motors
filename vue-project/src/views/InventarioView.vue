@@ -14,6 +14,7 @@
 </template>
 
 <script setup>
+import {  ClipboardList } from 'lucide-vue-next'
 import { ref } from 'vue'
 import { LayoutDashboard, Package, Users } from 'lucide-vue-next'
 import AppShell from '../components/AppShell.vue'
@@ -24,6 +25,7 @@ defineProps({ isDarkMode: Boolean })
 defineEmits(['change-view', 'toggle-theme'])
 
 const navItems = [
+  { key: 'ordenes', label: 'Órdenes', icon: ClipboardList },
   { key: 'gerente', label: 'Gerencia', icon: LayoutDashboard },
   { key: 'inventario', label: 'Inventario', icon: Package },
   { key: 'trabajadores', label: 'Trabajadores', icon: Users }

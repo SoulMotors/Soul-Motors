@@ -311,6 +311,7 @@
 </template>
 
 <script setup>
+
 import { ref, reactive, computed, onUnmounted } from 'vue'
 import {
   ShoppingBag, Package, Users, CalendarDays, Receipt, Wallet, PackageSearch, Search, List, LayoutGrid,
@@ -327,6 +328,7 @@ defineProps({ isDarkMode: Boolean })
 defineEmits(['change-view', 'toggle-theme'])
 
 const navItems = [
+  { key: 'ordenes', label: 'Órdenes', icon: ClipboardList },
   { key: 'ventas', label: 'Ventas', icon: ShoppingBag },
   { key: 'catalogo', label: 'Catálogo', icon: Package },
   { key: 'clientes', label: 'Clientes', icon: Users },
