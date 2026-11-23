@@ -242,6 +242,245 @@ FOR EACH ROW EXECUTE FUNCTION actualizar_timestamp();
 
 CREATE INDEX idx_garantia_estado_vencimiento ON garantia_orden(estado_garantia, fecha_vencimiento);
 
+
+-- ==========================================
+-- TAREA S2-T02: LÓGICA TRANSACCIONAL, GARANTÍAS Y AUDITORÍA
+-- Entorno: Neon (PostgreSQL 17 Cloud)
+-- ==========================================
+
+-- 1. Función SQL de Descuento Atómico al Aprobar Piezas (RF-INV-02 / FL-04)
+CREATE OR REPLACE FUNCTION fn_aprobar_pieza_orden(
+    p_detalle_id BIGINT,
+    p_admin_id BIGINT
+) RETURNS VOID AS $$
+DECLARE
+    v_rol_admin VARCHAR(50);
+    v_activo_admin BOOLEAN;
+    v_orden_id BIGINT;
+    v_orden_estado VARCHAR(20);
+    v_pieza_id BIGINT;
+    v_pieza_nombre VARCHAR(100);
+    v_cantidad INT;
+    v_estado_solicitud VARCHAR(20);
+    v_stock_actual INT;
+    v_precio_venta NUMERIC(12,2);
+BEGIN
+    -- Validar que el aprobador exista, esté activo y sea ADMINISTRADOR
+    SELECT rol, activo INTO v_rol_admin, v_activo_admin
+    FROM usuario WHERE id = p_admin_id;
+
+    IF NOT FOUND OR v_activo_admin IS NOT TRUE OR v_rol_admin <> 'ADMINISTRADOR' THEN
+        RAISE EXCEPTION 'Acceso denegado: solo un ADMINISTRADOR activo puede aprobar piezas (usuario_id=%).', p_admin_id;
+    END IF;
+
+    -- Bloquear línea de detalle_orden para evitar doble aprobación concurrente
+    SELECT orden_id, pieza_id, cantidad, estado_solicitud
+    INTO v_orden_id, v_pieza_id, v_cantidad, v_estado_solicitud
+    FROM detalle_orden
+    WHERE id = p_detalle_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'No existe el detalle de orden con id=%.', p_detalle_id;
+    END IF;
+
+    IF v_estado_solicitud <> 'SOLICITADA' THEN
+        RAISE EXCEPTION 'Solo se pueden aprobar piezas en estado SOLICITADA (estado actual: %).', v_estado_solicitud;
+    END IF;
+
+    -- Validar que la orden no esté cerrada ni cancelada
+    SELECT estado INTO v_orden_estado FROM orden_trabajo WHERE id = v_orden_id;
+    IF v_orden_estado IN ('FINALIZADA', 'ENTREGADA', 'CANCELADA') THEN
+        RAISE EXCEPTION 'No se pueden aprobar piezas en una orden con estado %.', v_orden_estado;
+    END IF;
+
+    -- Bloquear registro de pieza (FOR UPDATE) para garantizar atomicidad en stock
+    SELECT nombre, stock_actual, precio_venta
+    INTO v_pieza_nombre, v_stock_actual, v_precio_venta
+    FROM pieza
+    WHERE id = v_pieza_id
+    FOR UPDATE;
+
+    IF v_stock_actual < v_cantidad THEN
+        RAISE EXCEPTION 'Stock insuficiente para "%" (disponible: %, solicitado: %, faltante: %).',
+            v_pieza_nombre, v_stock_actual, v_cantidad, (v_cantidad - v_stock_actual);
+    END IF;
+
+    -- 1) Descontar inventario
+    UPDATE pieza
+    SET stock_actual = stock_actual - v_cantidad
+    WHERE id = v_pieza_id;
+
+    -- 2) Aprobar solicitud y congelar precio_unitario_historico
+    UPDATE detalle_orden
+    SET estado_solicitud = 'APROBADA',
+        precio_unitario_historico = v_precio_venta,
+        aprobado_por_id = p_admin_id
+    WHERE id = p_detalle_id;
+
+    -- 3) Registrar salida en movimiento_inventario
+    INSERT INTO movimiento_inventario (pieza_id, tipo_movimiento, cantidad)
+    VALUES (v_pieza_id, 'Salida', v_cantidad);
+
+    -- 4) Registrar trazabilidad explícita en registro_auditoria
+    INSERT INTO registro_auditoria (tabla_afectada, accion, usuario_id, detalle)
+    VALUES (
+        'detalle_orden',
+        'APROBACION_PIEZA',
+        p_admin_id,
+        jsonb_build_object(
+            'detalle_id', p_detalle_id,
+            'orden_id', v_orden_id,
+            'pieza_id', v_pieza_id,
+            'cantidad', v_cantidad,
+            'precio_congelado', v_precio_venta,
+            'stock_restante', (v_stock_actual - v_cantidad)
+        )
+    );
+END;
+$$ LANGUAGE plpgsql;
+
+
+-- 2. Trigger de Reverso Automático al Pasar a CANCELADA (HU-09)
+CREATE OR REPLACE FUNCTION fn_reverso_cancelacion_ot()
+RETURNS TRIGGER AS $$
+DECLARE
+    r_detalle RECORD;
+BEGIN
+    IF NEW.estado = 'CANCELADA' AND OLD.estado <> 'CANCELADA' THEN
+        FOR r_detalle IN
+            SELECT id, pieza_id, cantidad
+            FROM detalle_orden
+            WHERE orden_id = NEW.id AND estado_solicitud = 'APROBADA'
+            FOR UPDATE
+        LOOP
+            -- Devolver exactamente las piezas descontadas al inventario
+            UPDATE pieza
+            SET stock_actual = stock_actual + r_detalle.cantidad
+            WHERE id = r_detalle.pieza_id;
+
+            -- Marcar la línea como REVERTIDA
+            UPDATE detalle_orden
+            SET estado_solicitud = 'REVERTIDA'
+            WHERE id = r_detalle.id;
+
+            -- Registrar entrada de devolución en movimiento_inventario
+            INSERT INTO movimiento_inventario (pieza_id, tipo_movimiento, cantidad)
+            VALUES (r_detalle.pieza_id, 'Entrada', r_detalle.cantidad);
+
+            -- Registrar evento de reverso en registro_auditoria
+            INSERT INTO registro_auditoria (tabla_afectada, accion, usuario_id, detalle)
+            VALUES (
+                'orden_trabajo',
+                'REVERSO_STOCK',
+                NEW.vendedor_id,
+                jsonb_build_object(
+                    'orden_id', NEW.id,
+                    'detalle_id', r_detalle.id,
+                    'pieza_id', r_detalle.pieza_id,
+                    'cantidad_devuelta', r_detalle.cantidad,
+                    'motivo_cancelacion', NEW.motivo_cancelacion
+                )
+            );
+        END LOOP;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_reverso_cancelacion_ot
+AFTER UPDATE OF estado ON orden_trabajo
+FOR EACH ROW EXECUTE FUNCTION fn_reverso_cancelacion_ot();
+
+
+-- 3. Función de Validación Automática de Vigencia de Garantía (Fecha y Kilometraje)
+CREATE OR REPLACE FUNCTION fn_validar_vigencia_garantia(
+    p_garantia_id BIGINT,
+    p_km_actual INT,
+    p_fecha_consulta DATE DEFAULT CURRENT_DATE
+) RETURNS TABLE (
+    garantia_id BIGINT,
+    orden_id BIGINT,
+    es_valida BOOLEAN,
+    estado_actualizado VARCHAR(30),
+    motivo_resultado TEXT
+) AS $$
+DECLARE
+    v_garantia garantia_orden%ROWTYPE;
+    v_nuevo_estado VARCHAR(30);
+    v_motivo TEXT;
+    v_valida BOOLEAN := FALSE;
+BEGIN
+    SELECT * INTO v_garantia FROM garantia_orden WHERE id = p_garantia_id FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'No existe certificado de garantía con id=%.', p_garantia_id;
+    END IF;
+
+    IF v_garantia.estado_garantia IN ('RECLAMADA', 'ANULADA_POR_MANIPULACION') THEN
+        v_nuevo_estado := v_garantia.estado_garantia;
+        v_motivo := 'Garantía no elegible: estado actual ' || v_garantia.estado_garantia;
+    ELSIF p_fecha_consulta > v_garantia.fecha_vencimiento THEN
+        v_nuevo_estado := 'VENCIDA';
+        v_motivo := FORMAT('Garantía vencida por tiempo (venció el %s, fecha consulta %s).', v_garantia.fecha_vencimiento, p_fecha_consulta);
+    ELSIF p_km_actual > v_garantia.km_limite_cobertura THEN
+        v_nuevo_estado := 'VENCIDA';
+        v_motivo := FORMAT('Garantía vencida por kilometraje (límite %s km, actual %s km).', v_garantia.km_limite_cobertura, p_km_actual);
+    ELSE
+        v_nuevo_estado := 'VIGENTE';
+        v_valida := TRUE;
+        v_motivo := FORMAT('Garantía vigente hasta %s o %s km.', v_garantia.fecha_vencimiento, v_garantia.km_limite_cobertura);
+    END IF;
+
+    -- Actualizar estado automáticamente si cambió a VENCIDA
+    IF v_nuevo_estado <> v_garantia.estado_garantia THEN
+        UPDATE garantia_orden
+        SET estado_garantia = v_nuevo_estado
+        WHERE id = p_garantia_id;
+    END IF;
+
+    RETURN QUERY SELECT v_garantia.id, v_garantia.orden_id, v_valida, v_nuevo_estado, v_motivo;
+END;
+$$ LANGUAGE plpgsql;
+
+
+-- 4. Función y Triggers Genéricos de Audit Log en Tablas Críticas (CAM-02)
+CREATE OR REPLACE FUNCTION fn_audit_log_generico()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF (TG_OP = 'INSERT') THEN
+        INSERT INTO registro_auditoria (tabla_afectada, accion, detalle)
+        VALUES (TG_TABLE_NAME, 'INSERT', jsonb_build_object('registro_id', NEW.id, 'nuevo', to_jsonb(NEW)));
+        RETURN NEW;
+    ELSIF (TG_OP = 'UPDATE') THEN
+        INSERT INTO registro_auditoria (tabla_afectada, accion, detalle)
+        VALUES (TG_TABLE_NAME, 'UPDATE', jsonb_build_object('registro_id', NEW.id, 'anterior', to_jsonb(OLD), 'nuevo', to_jsonb(NEW)));
+        RETURN NEW;
+    ELSIF (TG_OP = 'DELETE') THEN
+        INSERT INTO registro_auditoria (tabla_afectada, accion, detalle)
+        VALUES (TG_TABLE_NAME, 'DELETE', jsonb_build_object('registro_id', OLD.id, 'anterior', to_jsonb(OLD)));
+        RETURN OLD;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_audit_orden_trabajo
+AFTER INSERT OR UPDATE OR DELETE ON orden_trabajo
+FOR EACH ROW EXECUTE FUNCTION fn_audit_log_generico();
+
+CREATE TRIGGER trg_audit_detalle_orden
+AFTER INSERT OR UPDATE OR DELETE ON detalle_orden
+FOR EACH ROW EXECUTE FUNCTION fn_audit_log_generico();
+
+CREATE TRIGGER trg_audit_garantia_orden
+AFTER INSERT OR UPDATE OR DELETE ON garantia_orden
+FOR EACH ROW EXECUTE FUNCTION fn_audit_log_generico();
+
+CREATE TRIGGER trg_audit_pieza
+AFTER INSERT OR UPDATE OR DELETE ON pieza
+FOR EACH ROW EXECUTE FUNCTION fn_audit_log_generico();
+
 -- ==========================================
 -- DATOS SEMILLA (DINÁMICOS SIN IDs QUEMADOS)
 -- ==========================================
