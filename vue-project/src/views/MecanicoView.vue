@@ -345,9 +345,10 @@
 </template>
 
 <script setup>
+
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import {
-  ClipboardList, Package, History, Wrench, Timer, PackageSearch, PackagePlus, Search, List, LayoutGrid,
+  LayoutDashboard, Users,ClipboardList, Package, History, Wrench, Timer, PackageSearch, PackagePlus, Search, List, LayoutGrid,
   PlusCircle, Plus, X, Play, Pause, CheckSquare, ShieldCheck, Check, Clock
 } from 'lucide-vue-next'
 import AppShell from '../components/AppShell.vue'
@@ -361,6 +362,7 @@ const props = defineProps({ isDarkMode: Boolean, userEmail: { type: String, defa
 defineEmits(['change-view', 'toggle-theme'])
 
 const navItems = [
+  { key: 'ordenes', label: 'Órdenes', icon: ClipboardList },
   { key: 'ordenes', label: 'Mis órdenes', icon: ClipboardList },
   { key: 'repuestos', label: 'Repuestos', icon: Package },
   { key: 'historial', label: 'Historial por placa', icon: History }

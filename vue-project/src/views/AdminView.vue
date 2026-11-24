@@ -374,6 +374,7 @@
 </template>
 
 <script setup>
+import { LayoutDashboard,  ClipboardList } from 'lucide-vue-next'
 import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import {
   Users, Search, DollarSign, TrendingDown, Settings, Eye, Edit3, UserPlus, UserMinus, X,
@@ -389,6 +390,7 @@ defineProps({ isDarkMode: Boolean })
 defineEmits(['change-view', 'toggle-theme'])
 
 const navItems = [
+  { key: 'ordenes', label: 'Órdenes', icon: ClipboardList },
   { key: 'finanzas', label: 'Finanzas', icon: DollarSign },
   { key: 'inventario', label: 'Inventario', icon: Package },
   { key: 'trabajadores', label: 'Trabajadores', icon: Users }

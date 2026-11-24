@@ -99,8 +99,9 @@
 </template>
 
 <script setup>
+
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { LayoutDashboard, Package, Users, Search, Settings, Eye, Edit3, X } from 'lucide-vue-next'
+import { LayoutDashboard, Package, Users,ClipboardList, Search, Settings, Eye, Edit3, X } from 'lucide-vue-next'
 import AppShell from '../components/AppShell.vue'
 // Nota: Si no usas WorkersMetrics como componente separado, puedes omitirlo o asegurarte de tenerlo.
 import WorkersMetrics from '../components/WorkersMetrics.vue'
@@ -109,6 +110,7 @@ defineProps({ isDarkMode: Boolean })
 defineEmits(['change-view', 'toggle-theme'])
 
 const navItems = [
+  { key: 'ordenes', label: 'Órdenes', icon: ClipboardList },
   { key: 'gerente', label: 'Gerencia', icon: LayoutDashboard },
   { key: 'inventario', label: 'Inventario', icon: Package },
   { key: 'trabajadores', label: 'Trabajadores', icon: Users }
