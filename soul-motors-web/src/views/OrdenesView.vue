@@ -4,7 +4,7 @@
     :navItems="navItems"
     activeKey="ordenes"
     title="Gestión de Órdenes de Servicio"
-    subtitle="Asignación de mecánicos por carga, control técnico de calidad y solicitud de repuestos"
+    subtitle="Asignación de mecánicos por carga, control técnico de garantía y solicitud de repuestos"
     @navigate="$emit('change-view', $event)"
     @toggle-theme="$emit('toggle-theme')"
     @logout="$emit('change-view', 'login')"
@@ -24,9 +24,12 @@
 
           <select v-model="filtroEstado" class="filter-select">
             <option value="">Todos los estados</option>
-            <option value="Pendiente">Pendiente</option>
-            <option value="En Proceso">En Proceso</option>
-            <option value="Control de Calidad">Control de Calidad</option>
+            <option value="DIAGNOSTICO">DIAGNOSTICO</option>
+            <option value="PENDIENTE">PENDIENTE</option>
+            <option value="EN_PROCESO">EN_PROCESO</option>
+            <option value="FINALIZADA">FINALIZADA</option>
+            <option value="ENTREGADA">ENTREGADA</option>
+            <option value="CANCELADA">CANCELADA</option>
           </select>
         </div>
       </div>
@@ -119,6 +122,7 @@
 
               <td>
                 <span class="status-badge" :class="slugEstado(orden.estado)">{{ orden.estado }}</span>
+                <small v-if="orden.motivoCancelacion" class="sub-text">Motivo: {{ orden.motivoCancelacion }}</small>
               </td>
 
               <td class="actions-col">
@@ -152,7 +156,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import {
   LayoutDashboard, Package, Users, ClipboardList,
   Search, ChevronDown, ShieldCheck, Wrench, ClipboardCheck, Cog
@@ -160,7 +164,7 @@ import {
 import AppShell from '../components/AppShell.vue'
 import GarantiaChecklistModal from '../components/GarantiaChecklistModal.vue'
 import SolicitudPiezasModal from '../components/SolicitudPiezasModal.vue'
-import { ordenesInicialesMock, mecanicosMock } from '../data/ordenesMock'
+import { ordenesService } from '../services/ordenesService'
 
 defineProps({ isDarkMode: Boolean })
 defineEmits(['change-view', 'toggle-theme'])
@@ -172,13 +176,18 @@ const navItems = [
   { key: 'trabajadores', label: 'Trabajadores', icon: Users }
 ]
 
-const ordenes = ref(ordenesInicialesMock)
-const mecanicos = ref(mecanicosMock)
+const ordenes = ref([])
+const mecanicos = ref([])
 const busqueda = ref('')
 const filtroEstado = ref('')
 const dropdownAbierto = ref(null)
 const ordenGarantia = ref(null)
 const ordenPiezas = ref(null)
+
+onMounted(async () => {
+  ordenes.value = await ordenesService.obtenerOrdenes()
+  mecanicos.value = await ordenesService.obtenerMecanicos()
+})
 
 const ordenesFiltradas = computed(() => {
   const q = busqueda.value.trim().toLowerCase()
@@ -217,10 +226,25 @@ const asignarMecanico = (orden, nuevoMecanicoId) => {
   dropdownAbierto.value = null
 }
 
-const actualizarGarantia = ({ ordenId, garantia }) => {
+const actualizarGarantia = async ({ ordenId, garantia }) => {
+  const resultado = await ordenesService.actualizarGarantiaOrden(ordenId, garantia, garantia.certificada)
   const target = ordenes.value.find(o => o.id === ordenId)
-  if (target) target.garantia = garantia
+  if (target) {
+    target.garantia = resultado.garantia
+    if (resultado.nuevoEstado) {
+      target.estado = resultado.nuevoEstado
+    }
+  }
   ordenGarantia.value = null
+}
+
+const cambiarEstadoOrden = async (ordenId, nuevoEstado, motivo = null) => {
+  const resultado = await ordenesService.actualizarEstadoOrden(ordenId, nuevoEstado, motivo)
+  const target = ordenes.value.find(o => o.id === ordenId)
+  if (target) {
+    target.estado = resultado.nuevoEstado
+    target.motivoCancelacion = resultado.motivoCancelacion
+  }
 }
 
 const actualizarPiezas = ({ ordenId, solicitudes }) => {
@@ -228,7 +252,7 @@ const actualizarPiezas = ({ ordenId, solicitudes }) => {
   if (target) target.solicitudesPiezas = solicitudes
 }
 
-const slugEstado = (estado) => estado.toLowerCase().replace(/\s+/g, '-')
+const slugEstado = (estado) => estado.toLowerCase().replace(/[\s_]+/g, '-')
 </script>
 
 <style scoped>
@@ -276,9 +300,11 @@ const slugEstado = (estado) => estado.toLowerCase().replace(/\s+/g, '-')
 .mech-option small { display: block; font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
 
 .status-badge { padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.status-badge.diagnostico { background: rgba(155, 89, 182, 0.15); color: #9B59B6; }
 .status-badge.pendiente { background: rgba(241, 196, 15, 0.15); color: #F1C40F; }
 .status-badge.en-proceso { background: rgba(52, 152, 219, 0.15); color: #3498DB; }
-.status-badge.control-de-calidad { background: rgba(46, 204, 113, 0.15); color: #2ECC71; }
+.status-badge.finalizada, .status-badge.entregada { background: rgba(46, 204, 113, 0.15); color: #2ECC71; }
+.status-badge.cancelada { background: rgba(231, 76, 60, 0.15); color: #E74C3C; }
 
 .actions-col { text-align: right; white-space: nowrap; }
 .action-btn { background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-primary); padding: 7px 11px; border-radius: 8px; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; margin-left: 6px; transition: 0.2s; }
