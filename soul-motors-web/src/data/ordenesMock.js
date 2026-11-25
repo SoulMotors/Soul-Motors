@@ -20,18 +20,22 @@ export const ordenesInicialesMock = [
     placa: 'XYZ-12A',
     servicio: 'Mantenimiento general y sincronización',
     mecanicoId: 1,
-    estado: 'En Proceso',
+    estado: 'EN_PROCESO',
+    motivoCancelacion: null,
     fechaIngreso: '2026-11-23',
     garantia: {
       checklist: {
         torque: true,
         frenos: true,
         sistemaElectrico: false,
-        pruebaRuta: false
+        pruebaRuta: false,
+        estanqueidadEmpaques: false
       },
       observaciones: 'Pendiente revisión de sensor de oxígeno y prueba final en vía.',
       dias: 30,
       kilometros: 1000,
+      kmEntrega: null,
+      seriesLotesPiezas: '',
       certificada: false
     },
     solicitudesPiezas: [
@@ -46,18 +50,22 @@ export const ordenesInicialesMock = [
     placa: 'KLM-89F',
     servicio: 'Cambio de pastillas y purga de frenos ABS',
     mecanicoId: 2,
-    estado: 'Control de Calidad',
+    estado: 'FINALIZADA',
+    motivoCancelacion: null,
     fechaIngreso: '2026-11-22',
     garantia: {
       checklist: {
         torque: true,
         frenos: true,
         sistemaElectrico: true,
-        pruebaRuta: true
+        pruebaRuta: true,
+        estanqueidadEmpaques: true
       },
       observaciones: 'Frenado óptimo en prueba de ruta.',
       dias: 45,
       kilometros: 1500,
+      kmEntrega: 12400,
+      seriesLotesPiezas: 'LOTE-FR-08',
       certificada: true
     },
     solicitudesPiezas: [
@@ -71,18 +79,22 @@ export const ordenesInicialesMock = [
     placa: 'PQR-45C',
     servicio: 'Diagnóstico falla de encendido y batería',
     mecanicoId: 3,
-    estado: 'Pendiente',
+    estado: 'PENDIENTE',
+    motivoCancelacion: null,
     fechaIngreso: '2026-11-23',
     garantia: {
       checklist: {
         torque: false,
         frenos: false,
         sistemaElectrico: false,
-        pruebaRuta: false
+        pruebaRuta: false,
+        estanqueidadEmpaques: false
       },
       observaciones: '',
       dias: 30,
       kilometros: 1000,
+      kmEntrega: null,
+      seriesLotesPiezas: '',
       certificada: false
     },
     solicitudesPiezas: [
