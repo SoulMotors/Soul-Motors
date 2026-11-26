@@ -184,11 +184,11 @@ public class OrdenTrabajoService {
 
         OrdenTrabajo orden = buscarOrden(id);
         EstadoOrden anterior = switch (orden.getEstado()) {
-            case ENTREGADA -> EstadoOrden.FINALIZADA;
             case FINALIZADA -> EstadoOrden.EN_PROCESO;
             case EN_PROCESO -> EstadoOrden.PENDIENTE;
             case PENDIENTE -> EstadoOrden.DIAGNOSTICO;
             case DIAGNOSTICO -> throw new ConflictoException("La orden ya se encuentra en el estado inicial DIAGNOSTICO.");
+            case ENTREGADA -> throw new ConflictoException("No se puede retroceder una orden que ya fue ENTREGADA.");
             case CANCELADA -> throw new ConflictoException("No se puede retroceder una orden que ya fue CANCELADA.");
         };
 
