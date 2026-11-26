@@ -1,0 +1,114 @@
+package com.soulmotors.api.garantia;
+
+import com.soulmotors.api.common.ConflictoException;
+import com.soulmotors.api.common.NoEncontradoException;
+import com.soulmotors.api.orden.EstadoOrden;
+import com.soulmotors.api.orden.OrdenTrabajo;
+import com.soulmotors.api.orden.OrdenTrabajoRepository;
+import com.soulmotors.api.usuario.Rol;
+import com.soulmotors.api.usuario.Usuario;
+import com.soulmotors.api.usuario.UsuarioRepository;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDate;
+
+@Service
+public class GarantiaOrdenService {
+
+    private final GarantiaOrdenRepository garantiaRepository;
+    private final OrdenTrabajoRepository ordenRepository;
+    private final UsuarioRepository usuarioRepository;
+
+    public GarantiaOrdenService(GarantiaOrdenRepository garantiaRepository,
+                                OrdenTrabajoRepository ordenRepository,
+                                UsuarioRepository usuarioRepository) {
+        this.garantiaRepository = garantiaRepository;
+        this.ordenRepository = ordenRepository;
+        this.usuarioRepository = usuarioRepository;
+    }
+
+    @Transactional(readOnly = true)
+    public GarantiaDto obtenerPorOrden(Long ordenId) {
+        OrdenTrabajo orden = ordenRepository.findById(ordenId)
+                .orElseThrow(() -> new NoEncontradoException("No existe la orden de trabajo con id=" + ordenId));
+
+        Usuario actual = obtenerUsuarioAutenticado();
+        if (actual != null && actual.getRol() == Rol.MECANICO
+                && !orden.getMecanicoAsignado().getId().equals(actual.getId())) {
+            throw new AccessDeniedException("No tienes permiso para consultar la garantía de una orden asignada a otro mecánico.");
+        }
+
+        GarantiaOrden garantia = garantiaRepository.findByOrdenId(ordenId)
+                .orElseThrow(() -> new NoEncontradoException("La orden id=" + ordenId + " aún no tiene certificado de garantía."));
+        return GarantiaDto.from(garantia);
+    }
+
+    @Transactional
+    public GarantiaDto registrarChecklistYGarantia(Long ordenId, EmitirGarantiaRequest req) {
+        OrdenTrabajo orden = ordenRepository.findById(ordenId)
+                .orElseThrow(() -> new NoEncontradoException("No existe la orden de trabajo con id=" + ordenId));
+
+        if (orden.getEstado() == EstadoOrden.ENTREGADA || orden.getEstado() == EstadoOrden.CANCELADA) {
+            throw new ConflictoException("No se puede modificar el checklist de una orden en estado " + orden.getEstado());
+        }
+
+        Usuario actual = obtenerUsuarioAutenticado();
+        if (actual != null && actual.getRol() == Rol.MECANICO
+                && !orden.getMecanicoAsignado().getId().equals(actual.getId())) {
+            throw new AccessDeniedException("Solo el mecánico asignado o un administrador puede registrar el checklist.");
+        }
+
+        boolean todosAprobados = Boolean.TRUE.equals(req.chkTorqueSeguridad())
+                && Boolean.TRUE.equals(req.chkFrenosTransmision())
+                && Boolean.TRUE.equals(req.chkSistemaElectrico())
+                && Boolean.TRUE.equals(req.chkEstanqueidadEmpaques())
+                && Boolean.TRUE.equals(req.chkPruebaRutaAprobada());
+
+        if (!todosAprobados) {
+            throw new ConflictoException("Todos los 5 parámetros del Checklist Técnico deben estar aprobados para emitir garantía.");
+        }
+
+        if (req.kmLimiteCobertura() < req.kmEntrega()) {
+            throw new ConflictoException("El kilometraje límite de cobertura debe ser mayor o igual al km de entrega.");
+        }
+
+        int dias = (req.diasCobertura() != null) ? req.diasCobertura() : 30;
+
+        GarantiaOrden garantia = garantiaRepository.findByOrdenId(ordenId).orElseGet(GarantiaOrden::new);
+        garantia.setOrden(orden);
+        garantia.setKmEntrega(req.kmEntrega());
+        garantia.setDiasCobertura(dias);
+        garantia.setKmLimiteCobertura(req.kmLimiteCobertura());
+        garantia.setFechaVencimiento(LocalDate.now().plusDays(dias));
+        garantia.setChkTorqueSeguridad(true);
+        garantia.setChkFrenosTransmision(true);
+        garantia.setChkSistemaElectrico(true);
+        garantia.setChkEstanqueidadEmpaques(true);
+        garantia.setChkPruebaRutaAprobada(true);
+        garantia.setSeriesLotesPiezas(req.seriesLotesPiezas());
+        garantia.setObservacionesTecnicas(req.observacionesTecnicas());
+        garantia.setEstadoGarantia(EstadoGarantia.VIGENTE);
+
+        return GarantiaDto.from(garantiaRepository.save(garantia));
+    }
+
+    @Transactional
+    public GarantiaDto actualizarEstado(Long ordenId, EstadoGarantia nuevoEstado) {
+        GarantiaOrden garantia = garantiaRepository.findByOrdenId(ordenId)
+                .orElseThrow(() -> new NoEncontradoException("La orden id=" + ordenId + " no tiene certificado de garantía."));
+        garantia.setEstadoGarantia(nuevoEstado);
+        return GarantiaDto.from(garantiaRepository.save(garantia));
+    }
+
+    private Usuario obtenerUsuarioAutenticado() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) {
+            return null;
+        }
+        return usuarioRepository.findByUsername(auth.getName()).orElse(null);
+    }
+}

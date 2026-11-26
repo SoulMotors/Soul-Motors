@@ -1,0 +1,205 @@
+package com.soulmotors.api.orden;
+
+import com.soulmotors.api.common.ConflictoException;
+import com.soulmotors.api.common.NoEncontradoException;
+import com.soulmotors.api.garantia.GarantiaOrdenRepository;
+import com.soulmotors.api.moto.Vehiculo;
+import com.soulmotors.api.moto.VehiculoRepository;
+import com.soulmotors.api.usuario.Rol;
+import com.soulmotors.api.usuario.Usuario;
+import com.soulmotors.api.usuario.UsuarioRepository;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.util.List;
+
+@Service
+public class OrdenTrabajoService {
+
+    private final OrdenTrabajoRepository ordenRepository;
+    private final VehiculoRepository vehiculoRepository;
+    private final UsuarioRepository usuarioRepository;
+    private final GarantiaOrdenRepository garantiaRepository;
+
+    public OrdenTrabajoService(OrdenTrabajoRepository ordenRepository,
+                               VehiculoRepository vehiculoRepository,
+                               UsuarioRepository usuarioRepository,
+                               GarantiaOrdenRepository garantiaRepository) {
+        this.ordenRepository = ordenRepository;
+        this.vehiculoRepository = vehiculoRepository;
+        this.usuarioRepository = usuarioRepository;
+        this.garantiaRepository = garantiaRepository;
+    }
+
+    @Transactional(readOnly = true)
+    public List<OrdenTrabajoDto> listar(EstadoOrden estado) {
+        Usuario actual = obtenerUsuarioAutenticado();
+        List<OrdenTrabajo> ordenes;
+
+        if (actual != null && actual.getRol() == Rol.MECANICO) {
+            ordenes = ordenRepository.findByMecanicoAsignadoIdOrderByCreadoAtDesc(actual.getId());
+            if (estado != null) {
+                ordenes = ordenes.stream().filter(o -> o.getEstado() == estado).toList();
+            }
+        } else if (estado != null) {
+            ordenes = ordenRepository.findByEstadoOrderByCreadoAtDesc(estado);
+        } else {
+            ordenes = ordenRepository.findAllByOrderByCreadoAtDesc();
+        }
+        return ordenes.stream().map(OrdenTrabajoDto::from).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public OrdenTrabajoDto obtenerPorId(Long id) {
+        OrdenTrabajo orden = buscarOrden(id);
+        validarAccesoLecturaMecanico(orden);
+        return OrdenTrabajoDto.from(orden);
+    }
+
+    @Transactional
+    public OrdenTrabajoDto crear(CrearOrdenRequest req) {
+        Vehiculo vehiculo = vehiculoRepository.findById(req.vehiculoId())
+                .orElseThrow(() -> new NoEncontradoException("No existe el vehículo con id=" + req.vehiculoId()));
+
+        Usuario mecanico = usuarioRepository.findById(req.mecanicoAsignadoId())
+                .orElseThrow(() -> new NoEncontradoException("No existe el mecánico con id=" + req.mecanicoAsignadoId()));
+
+        if (!Boolean.TRUE.equals(mecanico.getActivo()) || mecanico.getRol() != Rol.MECANICO) {
+            throw new ConflictoException("El empleado asignado debe tener rol MECANICO y estar activo.");
+        }
+
+        OrdenTrabajo orden = new OrdenTrabajo();
+        orden.setVehiculo(vehiculo);
+        orden.setMecanicoAsignado(mecanico);
+        orden.setDescripcionIngreso(req.descripcionIngreso().trim());
+        orden.setEstado(EstadoOrden.DIAGNOSTICO);
+        orden.setViabilidadTecnica(Boolean.TRUE);
+
+        BigDecimal manoObra = req.costoManoObra() != null ? req.costoManoObra() : BigDecimal.ZERO;
+        orden.setCostoManoObra(manoObra);
+        orden.setTotalOrden(manoObra);
+
+        if (req.vendedorId() != null) {
+            Usuario vendedor = usuarioRepository.findById(req.vendedorId())
+                    .orElseThrow(() -> new NoEncontradoException("No existe el usuario vendedor con id=" + req.vendedorId()));
+            orden.setVendedor(vendedor);
+        } else {
+            Usuario actual = obtenerUsuarioAutenticado();
+            if (actual != null) {
+                orden.setVendedor(actual);
+            }
+        }
+
+        if (req.ordenPadreGarantiaId() != null) {
+            OrdenTrabajo ordenPadre = buscarOrden(req.ordenPadreGarantiaId());
+            if (!ordenPadre.getVehiculo().getId().equals(vehiculo.getId())) {
+                throw new ConflictoException("La orden padre de garantía pertenece a otro vehículo.");
+            }
+            orden.setOrdenPadreGarantia(ordenPadre);
+        }
+
+        return OrdenTrabajoDto.from(ordenRepository.save(orden));
+    }
+
+    @Transactional
+    public OrdenTrabajoDto avanzarEstado(Long id, AvanzarEstadoRequest req) {
+        OrdenTrabajo orden = buscarOrden(id);
+        Usuario actual = obtenerUsuarioAutenticado();
+
+        if (orden.getEstado() == EstadoOrden.ENTREGADA || orden.getEstado() == EstadoOrden.CANCELADA) {
+            throw new ConflictoException("La orden está en estado " + orden.getEstado() + " y es de solo lectura.");
+        }
+
+        if (actual != null && actual.getRol() == Rol.MECANICO) {
+            if (!orden.getMecanicoAsignado().getId().equals(actual.getId())) {
+                throw new AccessDeniedException("Solo puedes gestionar las órdenes asignadas a tu usuario.");
+            }
+            if (orden.getEstado() == EstadoOrden.DIAGNOSTICO) {
+                throw new AccessDeniedException("Solo un ADMINISTRADOR puede avanzar la orden de DIAGNOSTICO a PENDIENTE.");
+            }
+            if (orden.getEstado() == EstadoOrden.FINALIZADA) {
+                throw new AccessDeniedException("Solo un ADMINISTRADOR puede marcar la orden como ENTREGADA.");
+            }
+        }
+
+        if (req != null) {
+            if (req.viabilidadTecnica() != null) {
+                orden.setViabilidadTecnica(req.viabilidadTecnica());
+            }
+            if (req.costoManoObra() != null) {
+                if (actual != null && actual.getRol() != Rol.ADMINISTRADOR) {
+                    throw new AccessDeniedException("Solo un ADMINISTRADOR puede modificar el costo de mano de obra.");
+                }
+                BigDecimal manoObraAnterior = orden.getCostoManoObra() != null ? orden.getCostoManoObra() : BigDecimal.ZERO;
+                BigDecimal totalActual = orden.getTotalOrden() != null ? orden.getTotalOrden() : BigDecimal.ZERO;
+                BigDecimal totalPiezas = totalActual.subtract(manoObraAnterior).max(BigDecimal.ZERO);
+
+                orden.setCostoManoObra(req.costoManoObra());
+                orden.setTotalOrden(totalPiezas.add(req.costoManoObra()));
+            }
+        }
+
+        EstadoOrden siguiente = switch (orden.getEstado()) {
+            case DIAGNOSTICO -> {
+                validarRequisitosParaPendiente(orden);
+                yield EstadoOrden.PENDIENTE;
+            }
+            case PENDIENTE -> EstadoOrden.EN_PROCESO;
+            case EN_PROCESO -> {
+                if (!garantiaRepository.existsByOrdenId(orden.getId())) {
+                    throw new ConflictoException("Debe registrar el Checklist Técnico de calidad antes de finalizar la orden.");
+                }
+                yield EstadoOrden.FINALIZADA;
+            }
+            case FINALIZADA -> {
+                if (!garantiaRepository.existsByOrdenId(orden.getId())) {
+                    throw new ConflictoException("Debe emitir el certificado de garantía antes de entregar la orden.");
+                }
+                yield EstadoOrden.ENTREGADA;
+            }
+            default -> throw new ConflictoException("Transición de estado no permitida desde " + orden.getEstado());
+        };
+
+        orden.setEstado(siguiente);
+        return OrdenTrabajoDto.from(ordenRepository.save(orden));
+    }
+
+    private void validarRequisitosParaPendiente(OrdenTrabajo orden) {
+        Usuario mec = orden.getMecanicoAsignado();
+        if (mec == null || !Boolean.TRUE.equals(mec.getActivo()) || mec.getRol() != Rol.MECANICO) {
+            throw new ConflictoException("Validación fallida: el mecánico asignado no está activo.");
+        }
+        if (!Boolean.TRUE.equals(orden.getViabilidadTecnica())) {
+            throw new ConflictoException("Validación fallida: la orden no tiene viabilidad técnica aprobada.");
+        }
+        long sinStock = ordenRepository.contarPiezasSinStockSuficiente(orden.getId());
+        if (sinStock > 0) {
+            throw new ConflictoException("Validación fallida: hay " + sinStock + " pieza(s) solicitada(s) sin stock suficiente.");
+        }
+    }
+
+    private OrdenTrabajo buscarOrden(Long id) {
+        return ordenRepository.findById(id)
+                .orElseThrow(() -> new NoEncontradoException("No existe la orden de trabajo con id=" + id));
+    }
+
+    private void validarAccesoLecturaMecanico(OrdenTrabajo orden) {
+        Usuario actual = obtenerUsuarioAutenticado();
+        if (actual != null && actual.getRol() == Rol.MECANICO
+                && !orden.getMecanicoAsignado().getId().equals(actual.getId())) {
+            throw new AccessDeniedException("No tienes permiso para consultar una orden asignada a otro mecánico.");
+        }
+    }
+
+    private Usuario obtenerUsuarioAutenticado() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) {
+            return null;
+        }
+        return usuarioRepository.findByUsername(auth.getName()).orElse(null);
+    }
+}
