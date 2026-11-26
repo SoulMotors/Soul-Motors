@@ -33,6 +33,15 @@ public class GarantiaOrdenService {
 
     @Transactional(readOnly = true)
     public GarantiaDto obtenerPorOrden(Long ordenId) {
+        OrdenTrabajo orden = ordenRepository.findById(ordenId)
+                .orElseThrow(() -> new NoEncontradoException("No existe la orden de trabajo con id=" + ordenId));
+
+        Usuario actual = obtenerUsuarioAutenticado();
+        if (actual != null && actual.getRol() == Rol.MECANICO
+                && !orden.getMecanicoAsignado().getId().equals(actual.getId())) {
+            throw new AccessDeniedException("No tienes permiso para consultar la garantía de una orden asignada a otro mecánico.");
+        }
+
         GarantiaOrden garantia = garantiaRepository.findByOrdenId(ordenId)
                 .orElseThrow(() -> new NoEncontradoException("La orden id=" + ordenId + " aún no tiene certificado de garantía."));
         return GarantiaDto.from(garantia);
