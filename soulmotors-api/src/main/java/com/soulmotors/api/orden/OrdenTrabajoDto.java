@@ -17,6 +17,7 @@ public record OrdenTrabajoDto(
         Boolean viabilidadTecnica,
         BigDecimal costoManoObra,
         BigDecimal totalOrden,
+        String motivoCancelacion,
         LocalDateTime creadoAt,
         LocalDateTime actualizadoAt
 ) {
@@ -42,6 +43,7 @@ public record OrdenTrabajoDto(
                 o.getViabilidadTecnica(),
                 o.getCostoManoObra(),
                 o.getTotalOrden(),
+                o.getMotivoCancelacion(),
                 o.getCreadoAt(),
                 o.getActualizadoAt()
         );
