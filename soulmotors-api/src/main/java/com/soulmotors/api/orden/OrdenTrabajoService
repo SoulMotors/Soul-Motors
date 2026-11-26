@@ -124,6 +124,9 @@ public class OrdenTrabajoService {
             if (!orden.getMecanicoAsignado().getId().equals(actual.getId())) {
                 throw new AccessDeniedException("Solo puedes gestionar las órdenes asignadas a tu usuario.");
             }
+            if (orden.getEstado() == EstadoOrden.DIAGNOSTICO) {
+                throw new AccessDeniedException("Solo un ADMINISTRADOR puede avanzar la orden de DIAGNOSTICO a PENDIENTE.");
+            }
             if (orden.getEstado() == EstadoOrden.FINALIZADA) {
                 throw new AccessDeniedException("Solo un ADMINISTRADOR puede marcar la orden como ENTREGADA.");
             }
@@ -134,8 +137,15 @@ public class OrdenTrabajoService {
                 orden.setViabilidadTecnica(req.viabilidadTecnica());
             }
             if (req.costoManoObra() != null) {
+                if (actual != null && actual.getRol() != Rol.ADMINISTRADOR) {
+                    throw new AccessDeniedException("Solo un ADMINISTRADOR puede modificar el costo de mano de obra.");
+                }
+                BigDecimal manoObraAnterior = orden.getCostoManoObra() != null ? orden.getCostoManoObra() : BigDecimal.ZERO;
+                BigDecimal totalActual = orden.getTotalOrden() != null ? orden.getTotalOrden() : BigDecimal.ZERO;
+                BigDecimal totalPiezas = totalActual.subtract(manoObraAnterior).max(BigDecimal.ZERO);
+
                 orden.setCostoManoObra(req.costoManoObra());
-                orden.setTotalOrden(req.costoManoObra());
+                orden.setTotalOrden(totalPiezas.add(req.costoManoObra()));
             }
         }
 
