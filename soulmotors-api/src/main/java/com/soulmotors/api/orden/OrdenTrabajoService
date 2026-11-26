@@ -1,4 +1,4 @@
- package com.soulmotors.api.orden;
+package com.soulmotors.api.orden;
 
 import com.soulmotors.api.common.ConflictoException;
 import com.soulmotors.api.common.NoEncontradoException;
@@ -8,6 +8,8 @@ import com.soulmotors.api.moto.VehiculoRepository;
 import com.soulmotors.api.usuario.Rol;
 import com.soulmotors.api.usuario.Usuario;
 import com.soulmotors.api.usuario.UsuarioRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -24,6 +26,9 @@ public class OrdenTrabajoService {
     private final VehiculoRepository vehiculoRepository;
     private final UsuarioRepository usuarioRepository;
     private final GarantiaOrdenRepository garantiaRepository;
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     public OrdenTrabajoService(OrdenTrabajoRepository ordenRepository,
                                VehiculoRepository vehiculoRepository,
@@ -62,6 +67,9 @@ public class OrdenTrabajoService {
 
     @Transactional
     public OrdenTrabajoDto crear(CrearOrdenRequest req) {
+        Usuario actual = obtenerUsuarioAutenticado();
+        registrarActorEnSesionBd(actual);
+
         Vehiculo vehiculo = vehiculoRepository.findById(req.vehiculoId())
                 .orElseThrow(() -> new NoEncontradoException("No existe el vehículo con id=" + req.vehiculoId()));
 
@@ -87,11 +95,8 @@ public class OrdenTrabajoService {
             Usuario vendedor = usuarioRepository.findById(req.vendedorId())
                     .orElseThrow(() -> new NoEncontradoException("No existe el usuario vendedor con id=" + req.vendedorId()));
             orden.setVendedor(vendedor);
-        } else {
-            Usuario actual = obtenerUsuarioAutenticado();
-            if (actual != null) {
-                orden.setVendedor(actual);
-            }
+        } else if (actual != null) {
+            orden.setVendedor(actual);
         }
 
         if (req.ordenPadreGarantiaId() != null) {
@@ -109,6 +114,7 @@ public class OrdenTrabajoService {
     public OrdenTrabajoDto avanzarEstado(Long id, AvanzarEstadoRequest req) {
         OrdenTrabajo orden = buscarOrden(id);
         Usuario actual = obtenerUsuarioAutenticado();
+        registrarActorEnSesionBd(actual);
 
         if (orden.getEstado() == EstadoOrden.ENTREGADA || orden.getEstado() == EstadoOrden.CANCELADA) {
             throw new ConflictoException("La orden está en estado " + orden.getEstado() + " y es de solo lectura.");
@@ -156,6 +162,63 @@ public class OrdenTrabajoService {
 
         orden.setEstado(siguiente);
         return OrdenTrabajoDto.from(ordenRepository.save(orden));
+    }
+
+    @Transactional
+    public OrdenTrabajoDto retrocederEstado(Long id) {
+        Usuario actual = obtenerUsuarioAutenticado();
+        if (actual != null && actual.getRol() != Rol.ADMINISTRADOR) {
+            throw new AccessDeniedException("Solo un ADMINISTRADOR puede retroceder el estado de una orden.");
+        }
+        registrarActorEnSesionBd(actual);
+
+        OrdenTrabajo orden = buscarOrden(id);
+        EstadoOrden anterior = switch (orden.getEstado()) {
+            case ENTREGADA -> EstadoOrden.FINALIZADA;
+            case FINALIZADA -> EstadoOrden.EN_PROCESO;
+            case EN_PROCESO -> EstadoOrden.PENDIENTE;
+            case PENDIENTE -> EstadoOrden.DIAGNOSTICO;
+            case DIAGNOSTICO -> throw new ConflictoException("La orden ya se encuentra en el estado inicial DIAGNOSTICO.");
+            case CANCELADA -> throw new ConflictoException("No se puede retroceder una orden que ya fue CANCELADA.");
+        };
+
+        orden.setEstado(anterior);
+        return OrdenTrabajoDto.from(ordenRepository.save(orden));
+    }
+
+    @Transactional
+    public OrdenTrabajoDto cancelar(Long id, CancelarOrdenRequest req) {
+        Usuario actual = obtenerUsuarioAutenticado();
+        if (actual != null && actual.getRol() != Rol.ADMINISTRADOR) {
+            throw new AccessDeniedException("Solo un ADMINISTRADOR puede cancelar una orden de trabajo.");
+        }
+        registrarActorEnSesionBd(actual);
+
+        if (req == null || req.motivoCancelacion() == null || req.motivoCancelacion().trim().isEmpty()) {
+            throw new ConflictoException("El motivo de cancelación es obligatorio.");
+        }
+
+        OrdenTrabajo orden = buscarOrden(id);
+        if (orden.getEstado() == EstadoOrden.CANCELADA) {
+            throw new ConflictoException("La orden ya se encuentra CANCELADA.");
+        }
+        if (orden.getEstado() == EstadoOrden.ENTREGADA) {
+            throw new ConflictoException("No se puede cancelar una orden que ya fue ENTREGADA.");
+        }
+
+        orden.setEstado(EstadoOrden.CANCELADA);
+        orden.setMotivoCancelacion(req.motivoCancelacion().trim());
+
+        // Al guardar CANCELADA, el trigger trg_reverso_cancelacion_ot en Neon devuelve las piezas aprobadas al stock
+        return OrdenTrabajoDto.from(ordenRepository.saveAndFlush(orden));
+    }
+
+    private void registrarActorEnSesionBd(Usuario actual) {
+        if (actual != null && actual.getId() != null && entityManager != null) {
+            entityManager.createNativeQuery("SELECT set_config('app.current_user_id', :uid, true)")
+                    .setParameter("uid", actual.getId().toString())
+                    .getSingleResult();
+        }
     }
 
     private void validarRequisitosParaPendiente(OrdenTrabajo orden) {

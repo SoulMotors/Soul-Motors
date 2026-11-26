@@ -42,4 +42,18 @@ public class OrdenTrabajoController {
                                    @RequestBody(required = false) @Valid AvanzarEstadoRequest request) {
         return ordenService.avanzarEstado(id, request);
     }
+
+    @PatchMapping("/{id}/retroceder")
+    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    public OrdenTrabajoDto retroceder(@PathVariable Long id) {
+        return ordenService.retrocederEstado(id);
+    }
+
+    @PatchMapping("/{id}/cancelar")
+    @PreAuthorize("hasRole('ADMINISTRADOR')")
+    public OrdenTrabajoDto cancelar(@PathVariable Long id,
+                                    @Valid @RequestBody CancelarOrdenRequest request) {
+        return ordenService.cancelar(id, request);
+    }
 }
+
