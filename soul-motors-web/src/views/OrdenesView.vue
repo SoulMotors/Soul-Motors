@@ -206,17 +206,20 @@
                 min="0"
                 step="1000"
                 v-model.number="borradorManoObra"
-                :disabled="esEstadoTerminal(ordenLiquidacionActiva.estado) || guardandoManoObra"
+                :disabled="esEstadoTerminal(ordenLiquidacionActiva.estado) || !esAdministrador || guardandoManoObra"
                 required
               />
               <button
                 type="submit"
                 class="btn-primary"
-                :disabled="esEstadoTerminal(ordenLiquidacionActiva.estado) || guardandoManoObra"
+                :disabled="esEstadoTerminal(ordenLiquidacionActiva.estado) || !esAdministrador || guardandoManoObra"
               >
                 Guardar
               </button>
             </div>
+            <small v-if="!esAdministrador" class="sub-text">
+              Solo el rol ADMINISTRADOR puede editar la mano de obra.
+            </small>
           </form>
 
           <div class="liq-line">
@@ -326,6 +329,29 @@ const navItems = [
   { key: 'trabajadores', label: 'Trabajadores', icon: Users }
 ]
 
+const resolverRolSesion = () => {
+  try {
+    const rawUser = localStorage.getItem('sm_user')
+    if (rawUser) {
+      const parsed = JSON.parse(rawUser)
+      const rol = parsed?.rol || parsed?.role
+      if (rol) return String(rol).toUpperCase()
+      const correo = String(parsed?.email || parsed?.correo || '').toLowerCase()
+      if (correo.includes('admin')) return 'ADMINISTRADOR'
+      if (correo.includes('mecanico')) return 'MECANICO'
+      if (correo.includes('vendedor')) return 'VENDEDOR'
+      if (correo.includes('gerente')) return 'GERENTE'
+    }
+    const rolDirecto = localStorage.getItem('sm_role')
+    if (rolDirecto) return String(rolDirecto).toUpperCase()
+  } catch {
+    // Ignora error de lectura en storage
+  }
+  return 'ADMINISTRADOR'
+}
+
+const esAdministrador = computed(() => resolverRolSesion() === 'ADMINISTRADOR')
+
 const ordenes = ref([])
 const mecanicos = ref([])
 const busqueda = ref('')
@@ -414,6 +440,12 @@ const seleccionarOrdenLiquidacion = (orden) => {
 
 const guardarManoObra = async () => {
   if (!ordenLiquidacionActiva.value) return
+  if (!esAdministrador.value) {
+    tipoFeedback.value = 'error'
+    mensajeFeedback.value = 'Solo el rol ADMINISTRADOR puede editar la mano de obra.'
+    return
+  }
+
   guardandoManoObra.value = true
   mensajeFeedback.value = ''
   try {
