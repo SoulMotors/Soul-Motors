@@ -1,5 +1,7 @@
 package com.soulmotors.api.detalleorden;
 
+import com.soulmotors.api.common.ConflictoException;
+import com.soulmotors.api.common.NoEncontradoException;
 import com.soulmotors.api.inventario.model.Pieza;
 import com.soulmotors.api.inventario.repository.PiezaRepository;
 import com.soulmotors.api.orden.EstadoOrden;
@@ -8,7 +10,11 @@ import com.soulmotors.api.orden.OrdenTrabajoRepository;
 import com.soulmotors.api.usuario.Usuario;
 import com.soulmotors.api.usuario.UsuarioRepository;
 import jakarta.persistence.EntityManager;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -39,7 +45,8 @@ public class DetalleOrdenService {
 
     @Transactional(readOnly = true)
     public List<DetalleOrdenDto> listarPorOrden(Long ordenId) {
-        verificarOrdenExiste(ordenId);
+        OrdenTrabajo orden = buscarOrden(ordenId);
+        validarTitularidadMecanico(orden);
         return detalleRepository.findByOrdenIdOrderByCreadoAtAsc(ordenId)
                 .stream()
                 .map(this::toDto)
@@ -49,22 +56,30 @@ public class DetalleOrdenService {
     @Transactional
     public DetalleOrdenDto solicitarPieza(Long ordenId, SolicitarPiezaRequest request) {
         OrdenTrabajo orden = buscarOrden(ordenId);
+        validarTitularidadMecanico(orden);
+
         if (orden.getEstado() == EstadoOrden.FINALIZADA
                 || orden.getEstado() == EstadoOrden.ENTREGADA
                 || orden.getEstado() == EstadoOrden.CANCELADA) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "No se pueden solicitar piezas en una orden con estado " + orden.getEstado());
+            throw new ConflictoException(
+                    "No se pueden solicitar piezas para una orden en estado " + orden.getEstado());
+        }
+
+        boolean cubiertoPorGarantia = Boolean.TRUE.equals(request.cubiertoPorGarantia());
+        if (cubiertoPorGarantia && !esAdministrador() && orden.getOrdenPadreGarantia() == null) {
+            throw new ConflictoException(
+                    "Solo un administrador o una orden de reingreso por garantía puede marcar piezas cubiertas por garantía.");
         }
 
         Pieza pieza = piezaRepository.findById(request.piezaId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Pieza no encontrada"));
+                .orElseThrow(() -> new NoEncontradoException("Pieza no encontrada"));
 
         DetalleOrden detalle = new DetalleOrden();
         detalle.setOrden(orden);
         detalle.setPieza(pieza);
         detalle.setCantidad(request.cantidad());
         detalle.setPrecioUnitarioHistorico(pieza.getPrecioVenta());
-        detalle.setCubiertoPorGarantia(Boolean.TRUE.equals(request.cubiertoPorGarantia()));
+        detalle.setCubiertoPorGarantia(cubiertoPorGarantia);
         detalle.setEstadoSolicitud(EstadoSolicitud.SOLICITADA);
 
         return toDto(detalleRepository.save(detalle));
@@ -76,10 +91,18 @@ public class DetalleOrdenService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Usuario no encontrado"));
 
         DetalleOrden detalle = detalleRepository.findByIdAndOrdenId(detalleId, ordenId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Detalle de orden no encontrado"));
+                .orElseThrow(() -> new NoEncontradoException("Detalle de orden no encontrado"));
 
         // Invoca la función SQL atómica de Leider (valida rol, stock, descuenta, congela precio y audita)
-        detalleRepository.ejecutarAprobacionAtomica(detalle.getId(), admin.getId());
+        try {
+            detalleRepository.ejecutarAprobacionAtomica(detalle.getId(), admin.getId());
+        } catch (DataAccessException ex) {
+            Throwable causa = ex.getMostSpecificCause();
+            String mensaje = (causa != null && causa.getMessage() != null)
+                    ? causa.getMessage().split("\n")[0]
+                    : "Error al aprobar la pieza en la orden.";
+            throw new ConflictoException(mensaje);
+        }
 
         // Limpia caché de Hibernate para leer el estado actualizado por la función SQL
         entityManager.flush();
@@ -88,18 +111,17 @@ public class DetalleOrdenService {
         recalcularTotalOrden(ordenId);
 
         DetalleOrden actualizado = detalleRepository.findById(detalleId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Detalle no encontrado tras aprobar"));
+                .orElseThrow(() -> new NoEncontradoException("Detalle no encontrado tras aprobar"));
         return toDto(actualizado);
     }
 
     @Transactional
     public DetalleOrdenDto rechazarPieza(Long ordenId, Long detalleId) {
         DetalleOrden detalle = detalleRepository.findByIdAndOrdenId(detalleId, ordenId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Detalle de orden no encontrado"));
+                .orElseThrow(() -> new NoEncontradoException("Detalle de orden no encontrado"));
 
         if (detalle.getEstadoSolicitud() != EstadoSolicitud.SOLICITADA) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Solo se pueden rechazar solicitudes en estado SOLICITADA");
+            throw new ConflictoException("Solo se pueden rechazar solicitudes en estado SOLICITADA");
         }
 
         detalle.setEstadoSolicitud(EstadoSolicitud.RECHAZADA);
@@ -110,7 +132,7 @@ public class DetalleOrdenService {
     public ResumenCostosOrdenDto actualizarManoObra(Long ordenId, ActualizarManoObraRequest request) {
         OrdenTrabajo orden = buscarOrden(ordenId);
         if (orden.getEstado() == EstadoOrden.ENTREGADA || orden.getEstado() == EstadoOrden.CANCELADA) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
+            throw new ConflictoException(
                     "No se puede modificar la mano de obra de una orden " + orden.getEstado());
         }
 
@@ -123,6 +145,7 @@ public class DetalleOrdenService {
     @Transactional(readOnly = true)
     public ResumenCostosOrdenDto obtenerResumenCostos(Long ordenId) {
         OrdenTrabajo orden = buscarOrden(ordenId);
+        validarTitularidadMecanico(orden);
         return calcularResumen(orden);
     }
 
@@ -133,6 +156,29 @@ public class DetalleOrdenService {
         orden.setTotalOrden(resumen.totalOrden());
         ordenRepository.save(orden);
         return resumen;
+    }
+
+    private void validarTitularidadMecanico(OrdenTrabajo orden) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) return;
+
+        boolean esMecanico = auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_MECANICO"));
+
+        if (esMecanico) {
+            String usernameAutenticado = auth.getName();
+            if (orden.getMecanicoAsignado() == null
+                      || !usernameAutenticado.equalsIgnoreCase(orden.getMecanicoAsignado().getUsername())) {
+               throw new AccessDeniedException(
+                        "No tienes permiso para acceder a una orden que no está asignada a ti.");
+    }
+}
+    }
+
+    private boolean esAdministrador() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth != null && auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMINISTRADOR"));
     }
 
     private ResumenCostosOrdenDto calcularResumen(OrdenTrabajo orden) {
@@ -169,13 +215,7 @@ public class DetalleOrdenService {
 
     private OrdenTrabajo buscarOrden(Long ordenId) {
         return ordenRepository.findById(ordenId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Orden de trabajo no encontrada"));
-    }
-
-    private void verificarOrdenExiste(Long ordenId) {
-        if (!ordenRepository.existsById(ordenId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Orden de trabajo no encontrada");
-        }
+                .orElseThrow(() -> new NoEncontradoException("Orden de trabajo no encontrada"));
     }
 
     private DetalleOrdenDto toDto(DetalleOrden d) {

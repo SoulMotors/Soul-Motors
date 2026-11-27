@@ -16,5 +16,5 @@ public interface DetalleOrdenRepository extends JpaRepository<DetalleOrden, Long
     List<DetalleOrden> findByOrdenIdAndEstadoSolicitud(Long ordenId, EstadoSolicitud estadoSolicitud);
 
     @Query(value = "SELECT fn_aprobar_pieza_orden(:detalleId, :adminId)", nativeQuery = true)
-    void ejecutarAprobacionAtomica(@Param("detalleId") Long detalleId, @Param("adminId") Long adminId);
+    Object ejecutarAprobacionAtomica(@Param("detalleId") Long detalleId, @Param("adminId") Long adminId);
 }

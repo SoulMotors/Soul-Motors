@@ -58,7 +58,7 @@ public class DetalleOrdenController {
     }
 
     @PatchMapping("/mano-obra")
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR', 'MECANICO')")
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR')")
     public ResumenCostosOrdenDto actualizarManoObra(
             @PathVariable Long ordenId,
             @Valid @RequestBody ActualizarManoObraRequest request) {
