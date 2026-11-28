@@ -18,7 +18,7 @@
         </div>
 
         <div v-if="esSoloLectura" class="alert-readonly">
-          Esta orden está en estado <strong>{{ orden.estado }}</strong> (solo lectura). No se pueden agregar ni modificar solicitudes de piezas.
+          Esta orden está en estado <strong>{{ orden.estado }}</strong>. No se pueden agregar ni modificar solicitudes de piezas.
         </div>
 
         <form v-else class="req-form" @submit.prevent="agregarSolicitud">
@@ -103,7 +103,7 @@
                     type="button"
                     class="cov-pill"
                     :class="{ covered: item.cubiertoPorGarantia || ordenCubiertaCompleta }"
-                    :disabled="esSoloLectura || item.estado === 'REVERTIDA' || ordenCubiertaCompleta || enviando"
+                    :disabled="esSoloLectura || !esAdministrador || item.estado === 'REVERTIDA' || ordenCubiertaCompleta || enviando"
                     @click="alternarCobertura(item)"
                   >
                     {{ item.cubiertoPorGarantia || ordenCubiertaCompleta ? 'Garantía' : 'Normal' }}
@@ -114,6 +114,7 @@
                 </td>
                 <td class="actions-cell">
                   <button
+                    v-if="esAdministrador"
                     type="button"
                     class="act-btn approve"
                     title="Aprobar pieza y descontar stock"
@@ -123,14 +124,16 @@
                     <Check :size="14" /> Aprobar
                   </button>
                   <button
+                    v-if="esAdministrador"
                     type="button"
                     class="act-btn reject"
                     title="Rechazar solicitud de pieza"
-                    :disabled="esSoloLectura || item.estado === 'RECHAZADA' || item.estado === 'REVERTIDA' || enviando"
+                    :disabled="esSoloLectura || item.estado === 'APROBADA' || item.estado === 'RECHAZADA' || item.estado === 'REVERTIDA' || enviando"
                     @click="cambiarEstado(item, 'RECHAZADA')"
                   >
                     <X :size="14" />
                   </button>
+                  <span v-if="!esAdministrador" class="role-hint">Solo ADMIN</span>
                 </td>
               </tr>
               <tr v-if="!solicitudes.length">
@@ -151,7 +154,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { X, Plus, Check } from 'lucide-vue-next'
-import { ordenesService } from '../services/ordenesService'
+import { ordenesService, ESTADOS_ORDEN_BLOQUEADOS_PIEZAS } from '../services/ordenesService'
 
 const props = defineProps({ orden: { type: Object, required: true } })
 const emit = defineEmits(['close', 'update-parts'])
@@ -168,6 +171,29 @@ const nuevo = reactive({
   cubiertoPorGarantia: false
 })
 
+const resolverRolSesion = () => {
+  try {
+    const rawUser = localStorage.getItem('sm_user')
+    if (rawUser) {
+      const parsed = JSON.parse(rawUser)
+      const rol = parsed?.rol || parsed?.role
+      if (rol) return String(rol).toUpperCase()
+      const correo = String(parsed?.email || parsed?.correo || '').toLowerCase()
+      if (correo.includes('admin')) return 'ADMINISTRADOR'
+      if (correo.includes('mecanico')) return 'MECANICO'
+      if (correo.includes('vendedor')) return 'VENDEDOR'
+      if (correo.includes('gerente')) return 'GERENTE'
+    }
+    const rolDirecto = localStorage.getItem('sm_role')
+    if (rolDirecto) return String(rolDirecto).toUpperCase()
+  } catch {
+    // Ignora error de lectura en storage
+  }
+  return 'ADMINISTRADOR'
+}
+
+const esAdministrador = computed(() => resolverRolSesion() === 'ADMINISTRADOR')
+
 watch(
   () => props.orden,
   (nuevaOrden) => {
@@ -181,8 +207,8 @@ onMounted(async () => {
   repuestos.value = await ordenesService.obtenerRepuestos()
 })
 
-const esSoloLectura = computed(
-  () => props.orden.estado === 'ENTREGADA' || props.orden.estado === 'CANCELADA'
+const esSoloLectura = computed(() =>
+  ESTADOS_ORDEN_BLOQUEADOS_PIEZAS.includes(props.orden.estado)
 )
 
 const ordenCubiertaCompleta = computed(
@@ -247,6 +273,15 @@ const agregarSolicitud = async () => {
 }
 
 const cambiarEstado = async (item, estado) => {
+  if (!esAdministrador.value) {
+    errorMsg.value = 'Solo el rol ADMINISTRADOR puede aprobar o rechazar piezas.'
+    return
+  }
+  if (estado === 'RECHAZADA' && item.estado === 'APROBADA') {
+    errorMsg.value = 'No se puede rechazar una pieza que ya está APROBADA.'
+    return
+  }
+
   errorMsg.value = ''
   enviando.value = true
   try {
@@ -269,6 +304,7 @@ const cambiarEstado = async (item, estado) => {
 }
 
 const alternarCobertura = async (item) => {
+  if (!esAdministrador.value) return
   errorMsg.value = ''
   enviando.value = true
   try {
@@ -344,6 +380,7 @@ const alternarCobertura = async (item) => {
 .act-btn.approve:hover:not(:disabled) { border-color: #2ECC71; color: #2ECC71; }
 .act-btn.reject:hover:not(:disabled) { border-color: #E74C3C; color: #E74C3C; }
 .act-btn:disabled { opacity: 0.35; cursor: default; }
+.role-hint { font-size: 11px; color: var(--text-secondary); font-weight: 600; }
 .empty-cell { text-align: center; color: var(--text-secondary); padding: 20px; }
 .modal-foot { display: flex; justify-content: flex-end; padding: 14px 24px; border-top: 1px solid var(--border-color); }
 .btn-secondary { background: transparent; border: 1px solid var(--border-color); color: var(--text-primary); padding: 8px 16px; border-radius: 10px; font-size: 12px; cursor: pointer; }

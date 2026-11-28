@@ -12,8 +12,17 @@ export const ESTADOS_ORDEN_VALIDOS = [
   'CANCELADA'
 ]
 
+export const ESTADOS_ORDEN_BLOQUEADOS_PIEZAS = [
+  'FINALIZADA',
+  'ENTREGADA',
+  'CANCELADA'
+]
+
 let ordenesDB = clonar(ordenesInicialesMock)
 let catalogoDB = clonar(repuestosDisponiblesMock)
+
+const tieneSesionApi = () => Boolean(localStorage.getItem('sm_token'))
+const esIdNumerico = (id) => typeof id === 'number' || /^\d+$/.test(String(id || ''))
 
 export const calcularTotalOrden = (orden) => {
   if (!orden) return 0
@@ -39,6 +48,24 @@ export const calcularTotalOrden = (orden) => {
   }, 0)
 
   return manoObra + piezasFacturables
+}
+
+const mapearDetalleDto = (dto) => {
+  const repuestoLocal = catalogoDB.find((r) => String(r.id) === String(dto.piezaId))
+  return {
+    id: dto.id,
+    piezaId: dto.piezaId,
+    sku: dto.piezaSku || repuestoLocal?.sku || `REP-${dto.piezaId}`,
+    repuesto: dto.piezaNombre || repuestoLocal?.nombre || `Pieza #${dto.piezaId}`,
+    cantidad: Number(dto.cantidad) || 1,
+    precioUnitarioHistorico: Number(dto.precioUnitarioHistorico ?? repuestoLocal?.precioVenta ?? 0),
+    subtotal: Number(dto.subtotal ?? 0),
+    cubiertoPorGarantia: Boolean(dto.cubiertoPorGarantia),
+    estado: dto.estadoSolicitud || dto.estado || 'SOLICITADA',
+    aprobadoPorId: dto.aprobadoPorId ?? null,
+    aprobadoPorNombre: dto.aprobadoPorNombre ?? null,
+    stockActual: repuestoLocal?.stock ?? 0
+  }
 }
 
 const normalizarOrden = (orden) => {
@@ -98,6 +125,39 @@ export const ordenesService = {
     return clonar(catalogoDB)
   },
 
+  async obtenerDetallesOrden(ordenId) {
+    const orden = ordenesDB.find((o) => String(o.id) === String(ordenId))
+    if (tieneSesionApi() && esIdNumerico(ordenId)) {
+      try {
+        const [{ data: detallesData }, { data: costosData }] = await Promise.all([
+          api.get(`/ordenes/${ordenId}/detalles`),
+          api.get(`/ordenes/${ordenId}/costos`)
+        ])
+        const mapeados = Array.isArray(detallesData) ? detallesData.map(mapearDetalleDto) : []
+        if (orden) {
+          orden.solicitudesPiezas = mapeados
+          if (costosData?.costoManoObra != null) {
+            orden.costoManoObra = Number(costosData.costoManoObra) || 0
+          }
+          orden.totalOrden =
+            costosData?.totalOrden != null
+              ? Number(costosData.totalOrden)
+              : calcularTotalOrden(orden)
+        }
+        return {
+          solicitudesPiezas: clonar(mapeados),
+          totalOrden: orden ? orden.totalOrden : Number(costosData?.totalOrden ?? 0)
+        }
+      } catch {
+        // Respaldo local si el backend no responde
+      }
+    }
+    return {
+      solicitudesPiezas: clonar(orden?.solicitudesPiezas || []),
+      totalOrden: orden ? calcularTotalOrden(orden) : 0
+    }
+  },
+
   async crearOrden(payload) {
     const nuevaOrden = normalizarOrden({
       id: payload.id ?? `ORD-${String(ordenesDB.length + 1).padStart(3, '0')}`,
@@ -135,7 +195,7 @@ export const ordenesService = {
   },
 
   async actualizarGarantiaOrden(ordenId, garantiaPayload, marcarFinalizada = false) {
-    const orden = ordenesDB.find((o) => o.id === ordenId)
+    const orden = ordenesDB.find((o) => String(o.id) === String(ordenId))
     const nuevoEstado = marcarFinalizada ? 'FINALIZADA' : null
     const garantiaClonada = clonar(garantiaPayload)
 
@@ -159,135 +219,147 @@ export const ordenesService = {
     }
   },
 
-  async actualizarEstadoOrden(ordenId, nuevoEstado, motivo = null) {
-    if (!ESTADOS_ORDEN_VALIDOS.includes(nuevoEstado)) {
-      throw new Error(`Estado de orden no válido: ${nuevoEstado}`)
-    }
-
-    const orden = ordenesDB.find((o) => o.id === ordenId)
-    const motivoCancelacion = nuevoEstado === 'CANCELADA' ? motivo : null
-
-    if (orden) {
-      if (nuevoEstado === 'CANCELADA' && orden.estado !== 'CANCELADA') {
-        orden.solicitudesPiezas.forEach((item) => {
-          if (item.estado === 'APROBADA') {
-            const pieza = catalogoDB.find((p) => p.id === item.piezaId)
-            if (pieza) {
-              pieza.stock += Number(item.cantidad) || 0
-            }
-            item.estado = 'REVERTIDA'
-          }
-        })
-      }
-      orden.estado = nuevoEstado
-      orden.motivoCancelacion = motivoCancelacion
-      orden.totalOrden = calcularTotalOrden(orden)
-    }
-
-    return {
-      ordenId,
-      nuevoEstado,
-      motivoCancelacion,
-      solicitudesPiezas: orden ? clonar(orden.solicitudesPiezas) : [],
-      totalOrden: orden ? orden.totalOrden : 0
-    }
-  },
-
-  async solicitarPiezaOrden(ordenId, { piezaId, cantidad, nota, cubiertoPorGarantia = false }) {
-    const orden = ordenesDB.find((o) => o.id === ordenId)
+  async solicitarPiezaOrden(ordenId, { piezaId, cantidad, nota = '', cubiertoPorGarantia = false }) {
+    const orden = ordenesDB.find((o) => String(o.id) === String(ordenId))
     if (!orden) {
-      throw new Error(`No se encontró la orden ${ordenId}`)
+      throw new Error(`No se encontró la orden ${ordenId}.`)
     }
-    if (orden.estado === 'ENTREGADA' || orden.estado === 'CANCELADA') {
-      throw new Error(`La orden está en estado ${orden.estado} y no admite nuevas solicitudes.`)
+
+    if (ESTADOS_ORDEN_BLOQUEADOS_PIEZAS.includes(orden.estado)) {
+      throw new Error(
+        `La orden está en estado ${orden.estado}; no se admiten nuevas solicitudes de piezas.`
+      )
     }
 
     const cant = Number(cantidad)
-    if (!Number.isFinite(cant) || cant <= 0) {
-      throw new Error('La cantidad solicitada debe ser mayor a 0.')
+    if (!Number.isInteger(cant) || cant < 1) {
+      throw new Error('La cantidad debe ser un número entero mayor a 0.')
     }
 
-    const pieza = catalogoDB.find((p) => p.id === piezaId)
-    if (!pieza) {
+    const repuesto = catalogoDB.find((r) => String(r.id) === String(piezaId))
+    if (!repuesto) {
       throw new Error('Selecciona un repuesto válido del inventario.')
     }
 
-    const nuevaSolicitud = {
-      id: Date.now() + Math.floor(Math.random() * 1000),
-      piezaId: pieza.id,
-      sku: pieza.sku,
-      repuesto: pieza.nombre,
-      cantidad: cant,
-      precioUnitarioHistorico: Number(pieza.precioVenta) || 0,
-      cubiertoPorGarantia: Boolean(cubiertoPorGarantia),
-      stockActual: Number(pieza.stock) || 0,
-      estado: 'SOLICITADA',
-      nota: (nota || '').trim() || 'Solicitud desde taller'
+    if (tieneSesionApi() && esIdNumerico(ordenId)) {
+      try {
+        await api.post(`/ordenes/${ordenId}/detalles`, {
+          piezaId: Number(repuesto.id),
+          cantidad: cant,
+          cubiertoPorGarantia: Boolean(cubiertoPorGarantia)
+        })
+        await this.obtenerRepuestos()
+        const sincronizado = await this.obtenerDetallesOrden(ordenId)
+        return {
+          solicitudesPiezas: sincronizado.solicitudesPiezas,
+          repuestos: clonar(catalogoDB),
+          totalOrden: sincronizado.totalOrden
+        }
+      } catch (err) {
+        if (err?.response?.data?.message) {
+          throw new Error(err.response.data.message)
+        }
+      }
     }
 
-    orden.solicitudesPiezas.unshift(nuevaSolicitud)
+    const nuevaSolicitud = {
+      id: `SOL-${Date.now()}`,
+      piezaId: repuesto.id,
+      sku: repuesto.sku,
+      repuesto: repuesto.nombre,
+      cantidad: cant,
+      precioUnitarioHistorico: Number(repuesto.precioVenta) || 0,
+      nota: (nota || '').trim(),
+      cubiertoPorGarantia: Boolean(cubiertoPorGarantia),
+      estado: 'SOLICITADA',
+      stockActual: repuesto.stock
+    }
+
+    orden.solicitudesPiezas = orden.solicitudesPiezas || []
+    orden.solicitudesPiezas.push(nuevaSolicitud)
     orden.totalOrden = calcularTotalOrden(orden)
 
     return {
-      ordenId,
-      solicitud: clonar(nuevaSolicitud),
       solicitudesPiezas: clonar(orden.solicitudesPiezas),
       repuestos: clonar(catalogoDB),
       totalOrden: orden.totalOrden
     }
   },
 
-  async gestionarSolicitudPieza(ordenId, detalleId, { estado, cubiertoPorGarantia }) {
-    const estadosPermitidos = ['APROBADA', 'RECHAZADA']
-    if (!estadosPermitidos.includes(estado)) {
-      throw new Error(`Estado de solicitud no válido: ${estado}`)
-    }
-
-    const orden = ordenesDB.find((o) => o.id === ordenId)
+  async gestionarSolicitudPieza(ordenId, solicitudId, { estado, cubiertoPorGarantia }) {
+    const orden = ordenesDB.find((o) => String(o.id) === String(ordenId))
     if (!orden) {
-      throw new Error(`No se encontró la orden ${ordenId}`)
-    }
-    if (orden.estado === 'ENTREGADA' || orden.estado === 'CANCELADA') {
-      throw new Error(`La orden está en estado ${orden.estado} y es de solo lectura.`)
+      throw new Error(`No se encontró la orden ${ordenId}.`)
     }
 
-    const item = orden.solicitudesPiezas.find((s) => s.id === detalleId)
-    if (!item) {
-      throw new Error('No se encontró la solicitud de pieza en la orden.')
+    if (ESTADOS_ORDEN_BLOQUEADOS_PIEZAS.includes(orden.estado)) {
+      throw new Error(
+        `La orden está en estado ${orden.estado}; no se pueden aprobar ni rechazar piezas.`
+      )
     }
 
-    const pieza = catalogoDB.find((p) => p.id === item.piezaId)
-    const cantidad = Number(item.cantidad) || 0
+    const solicitud = (orden.solicitudesPiezas || []).find((s) => String(s.id) === String(solicitudId))
+    if (!solicitud) {
+      throw new Error('No se encontró la solicitud de pieza indicada.')
+    }
 
-    if (estado === 'APROBADA' && item.estado !== 'APROBADA') {
-      const stockDisponible = pieza ? Number(pieza.stock) : Number(item.stockActual)
-      if (stockDisponible < cantidad) {
-        throw new Error(
-          `Stock insuficiente para "${item.repuesto}" (Requerido: ${cantidad} u., Disponible: ${stockDisponible} u.).`
-        )
-      }
-      if (pieza) {
-        pieza.stock = stockDisponible - cantidad
-        item.stockActual = pieza.stock
-      }
-      if (!item.precioUnitarioHistorico && pieza) {
-        item.precioUnitarioHistorico = Number(pieza.precioVenta) || 0
+    if (solicitud.estado === 'REVERTIDA') {
+      throw new Error('Una solicitud revertida no puede modificarse.')
+    }
+
+    if (estado === 'RECHAZADA' && solicitud.estado === 'APROBADA') {
+      throw new Error('No se puede rechazar una pieza que ya fue aprobada.')
+    }
+
+    if (tieneSesionApi() && esIdNumerico(ordenId) && esIdNumerico(solicitudId)) {
+      try {
+        if (estado === 'APROBADA') {
+          await api.patch(`/ordenes/${ordenId}/detalles/${solicitudId}/aprobar`)
+        } else if (estado === 'RECHAZADA') {
+          await api.patch(`/ordenes/${ordenId}/detalles/${solicitudId}/rechazar`)
+        }
+        await this.obtenerRepuestos()
+        const sincronizado = await this.obtenerDetallesOrden(ordenId)
+        return {
+          solicitudesPiezas: sincronizado.solicitudesPiezas,
+          repuestos: clonar(catalogoDB),
+          totalOrden: sincronizado.totalOrden
+        }
+      } catch (err) {
+        if (err?.response?.data?.message) {
+          throw new Error(err.response.data.message)
+        }
       }
     }
+
+    const repuesto = catalogoDB.find((r) => String(r.id) === String(solicitud.piezaId))
+    const cantidad = Number(solicitud.cantidad) || 0
 
     if (typeof cubiertoPorGarantia === 'boolean') {
-      item.cubiertoPorGarantia = cubiertoPorGarantia
+      solicitud.cubiertoPorGarantia = cubiertoPorGarantia
     }
 
-    item.estado = estado
-    orden.solicitudesPiezas.forEach((s) => {
-      const p = catalogoDB.find((cat) => cat.id === s.piezaId)
-      if (p) s.stockActual = p.stock
-    })
+    if (estado === 'APROBADA' && solicitud.estado !== 'APROBADA') {
+      if (repuesto) {
+        if (repuesto.stock < cantidad) {
+          throw new Error(
+            `Stock insuficiente para "${repuesto.nombre}". Disponible: ${repuesto.stock} u., solicitado: ${cantidad} u.`
+          )
+        }
+        repuesto.stock -= cantidad
+      }
+      solicitud.precioUnitarioHistorico = Number(
+        solicitud.precioUnitarioHistorico ?? repuesto?.precioVenta ?? 0
+      )
+      solicitud.estado = 'APROBADA'
+    } else if (estado === 'RECHAZADA' && solicitud.estado !== 'RECHAZADA') {
+      solicitud.estado = 'RECHAZADA'
+    }
+
+    solicitud.stockActual = repuesto ? repuesto.stock : (solicitud.stockActual ?? 0)
     orden.totalOrden = calcularTotalOrden(orden)
 
     return {
-      ordenId,
       solicitudesPiezas: clonar(orden.solicitudesPiezas),
       repuestos: clonar(catalogoDB),
       totalOrden: orden.totalOrden
@@ -295,17 +367,38 @@ export const ordenesService = {
   },
 
   async actualizarManoObraOrden(ordenId, costoManoObra) {
-    const orden = ordenesDB.find((o) => o.id === ordenId)
+    const orden = ordenesDB.find((o) => String(o.id) === String(ordenId))
     if (!orden) {
-      throw new Error(`No se encontró la orden ${ordenId}`)
+      throw new Error(`No se encontró la orden ${ordenId}.`)
     }
+
     if (orden.estado === 'ENTREGADA' || orden.estado === 'CANCELADA') {
-      throw new Error(`La orden está en estado ${orden.estado} y es de solo lectura.`)
+      throw new Error(`La orden está en estado ${orden.estado}; no se puede modificar la mano de obra.`)
     }
 
     const valorManoObra = Number(costoManoObra)
-    if (!Number.isFinite(valorManoObra) || valorManoObra < 0) {
-      throw new Error('El costo de mano de obra debe ser un valor numérico igual o mayor a 0.')
+    if (Number.isNaN(valorManoObra) || valorManoObra < 0) {
+      throw new Error('El costo de mano de obra no puede ser negativo.')
+    }
+
+    if (tieneSesionApi() && esIdNumerico(ordenId)) {
+      try {
+        const { data } = await api.patch(`/ordenes/${ordenId}/mano-obra`, {
+          costoManoObra: valorManoObra
+        })
+        orden.costoManoObra = Number(data?.costoManoObra ?? valorManoObra)
+        orden.totalOrden =
+          data?.totalOrden != null ? Number(data.totalOrden) : calcularTotalOrden(orden)
+        return {
+          ordenId,
+          costoManoObra: orden.costoManoObra,
+          totalOrden: orden.totalOrden
+        }
+      } catch (err) {
+        if (err?.response?.data?.message) {
+          throw new Error(err.response.data.message)
+        }
+      }
     }
 
     orden.costoManoObra = valorManoObra
