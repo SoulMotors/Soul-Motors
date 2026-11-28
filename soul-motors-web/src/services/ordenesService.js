@@ -193,7 +193,44 @@ export const ordenesService = {
     ordenesDB.unshift(nuevaOrden)
     return normalizarOrden(nuevaOrden)
   },
+    async actualizarEstadoOrden(ordenId, nuevoEstado, motivoCancelacion = null) {
+    if (!ESTADOS_ORDEN_VALIDOS.includes(nuevoEstado)) {
+      throw new Error(`Estado de orden no válido: ${nuevoEstado}`)
+    }
 
+    const orden = ordenesDB.find((o) => String(o.id) === String(ordenId))
+    if (!orden) {
+      throw new Error(`No se encontró la orden ${ordenId}.`)
+    }
+
+    if (orden.estado === 'ENTREGADA' || orden.estado === 'CANCELADA') {
+      throw new Error(`La orden está en estado terminal ${orden.estado} y no puede cambiar de estado.`)
+    }
+
+    if (nuevoEstado === 'CANCELADA' && !String(motivoCancelacion || '').trim()) {
+      throw new Error('Debes indicar el motivo de cancelación.')
+    }
+
+    if (tieneSesionApi() && esIdNumerico(ordenId)) {
+      try {
+        await api.patch(`/ordenes/${ordenId}/estado`, {
+          estado: nuevoEstado,
+          motivoCancelacion: nuevoEstado === 'CANCELADA' ? String(motivoCancelacion).trim() : null
+        })
+      } catch (err) {
+        if (err?.response?.data?.message) {
+          throw new Error(err.response.data.message)
+        }
+      }
+    }
+
+    orden.estado = nuevoEstado
+    orden.motivoCancelacion =
+      nuevoEstado === 'CANCELADA' ? String(motivoCancelacion).trim() : null
+    orden.totalOrden = calcularTotalOrden(orden)
+
+    return normalizarOrden(orden)
+  },
   async actualizarGarantiaOrden(ordenId, garantiaPayload, marcarFinalizada = false) {
     const orden = ordenesDB.find((o) => String(o.id) === String(ordenId))
     const nuevoEstado = marcarFinalizada ? 'FINALIZADA' : null
